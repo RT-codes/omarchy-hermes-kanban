@@ -23,7 +23,7 @@ Panel {
   readonly property color runningColor: "#34d399"
   readonly property color reviewColor: "#fbbf24"
   readonly property color readyColor: "#60a5fa"
-  readonly property string fontFamily: bar && bar.fontFamily ? bar.fontFamily : Style.font.family
+  readonly property string fontFamily: bar && bar.fontFamily ? bar.fontFamily : Style.fontFamily
 
   readonly property string sshHost: String(setting("sshHost", "ssh-ninalyx") || "ssh-ninalyx")
   readonly property string remoteHermesPath: String(setting("remoteHermesPath", "hermes") || "hermes")
