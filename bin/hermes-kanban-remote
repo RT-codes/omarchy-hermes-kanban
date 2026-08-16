@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -u
+
+usage() {
+  echo "Usage: hermes-kanban-remote snapshot --host HOST --hermes PATH [--board SLUG ...]" >&2
+}
+
+[[ ${1:-} == "snapshot" ]] || {
+  usage
+  exit 2
+}
+shift
+
+ssh_host=""
+hermes_path="hermes"
+boards=()
+
+while (($#)); do
+  case "$1" in
+    --host)
+      (($# >= 2)) || { usage; exit 2; }
+      ssh_host=$2
+      shift 2
+      ;;
+    --hermes)
+      (($# >= 2)) || { usage; exit 2; }
+      hermes_path=$2
+      shift 2
+      ;;
+    --board)
+      (($# >= 2)) || { usage; exit 2; }
+      boards+=("$2")
+      shift 2
+      ;;
+    *)
+      echo "hermes-kanban-remote: unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+[[ $ssh_host =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+  echo "hermes-kanban-remote: invalid SSH host alias" >&2
+  exit 2
+}
+[[ $hermes_path =~ ^[/A-Za-z0-9._-]+$ ]] || {
+  echo "hermes-kanban-remote: invalid Hermes executable path" >&2
+  exit 2
+}
+for board in "${boards[@]}"; do
+  [[ $board =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || {
+    echo "hermes-kanban-remote: invalid board slug: $board" >&2
+    exit 2
+  }
+done
+
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ssh_bin=${HERMES_KANBAN_SSH_BIN:-ssh}
+timeout_sec=${HERMES_KANBAN_COMMAND_TIMEOUT_SEC:-20}
+
+[[ $timeout_sec =~ ^[1-9][0-9]{0,2}$ ]] || {
+  echo "hermes-kanban-remote: invalid command timeout" >&2
+  exit 2
+}
+
+timeout "${timeout_sec}s" "$ssh_bin" \
+  -F "$HOME/.ssh/config" \
+  -o BatchMode=yes \
+  -o ConnectionAttempts=1 \
+  -o ConnectTimeout=5 \
+  -o ServerAliveInterval=5 \
+  -o ServerAliveCountMax=1 \
+  -o StrictHostKeyChecking=yes \
+  -o LogLevel=ERROR \
+  "$ssh_host" python3 - "$hermes_path" "${boards[@]}" \
+  < "$script_dir/remote_snapshot.py"
+status=$?
+
+case $status in
+  0) exit 0 ;;
+  124)
+    echo "Hermes SSH request timed out" >&2
+    exit 10
+    ;;
+  255)
+    echo "Hermes SSH connection or authentication failed" >&2
+    exit 10
+    ;;
+  11) exit 11 ;;
+  *)
+    echo "Hermes remote snapshot failed (exit $status)" >&2
+    exit 11
+    ;;
+esac

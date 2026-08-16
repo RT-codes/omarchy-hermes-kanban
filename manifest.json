@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "perro.hermes-kanban",
+  "name": "Hermes Kanban",
+  "version": "0.1.0",
+  "author": "David Ojeda",
+  "license": "MIT",
+  "description": "Read-only progress for selected Hermes Kanban boards on a remote host.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Hermes Kanban",
+    "description": "Monitor running, blocked, review, and ready Hermes tasks across multiple boards.",
+    "category": "Status",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "sshHost": "ssh-ninalyx",
+      "remoteHermesPath": "hermes",
+      "openRefreshSec": 15,
+      "backgroundRefreshSec": 60
+    },
+    "schema": [
+      {
+        "key": "sshHost",
+        "type": "string",
+        "label": "SSH host",
+        "defaultValue": "ssh-ninalyx",
+        "description": "OpenSSH Host alias used for the remote Hermes machine."
+      },
+      {
+        "key": "remoteHermesPath",
+        "type": "string",
+        "label": "Remote Hermes executable",
+        "defaultValue": "hermes",
+        "description": "Command name or absolute path to Hermes on the remote host."
+      },
+      {
+        "key": "openRefreshSec",
+        "type": "integer",
+        "label": "Open refresh interval (seconds)",
+        "min": 5,
+        "max": 300,
+        "step": 5,
+        "defaultValue": 15
+      },
+      {
+        "key": "backgroundRefreshSec",
+        "type": "integer",
+        "label": "Background refresh interval (seconds)",
+        "min": 15,
+        "max": 3600,
+        "step": 15,
+        "defaultValue": 60
+      }
+    ]
+  }
+}
