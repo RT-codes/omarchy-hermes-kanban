@@ -62,5 +62,5 @@ No password, private key, dashboard token, or OAuth cookie is stored by the plug
 ```bash
 tests/run.sh
 omarchy plugin validate .
-qmllint -I /home/perro/.local/share/omarchy/shell BarWidget.qml Panel.qml
+qmllint -I /usr/lib/qt6/qml -I /usr/share/omarchy/shell BarWidget.qml Panel.qml
 ```
