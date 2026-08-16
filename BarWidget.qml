@@ -58,7 +58,7 @@ BarWidget {
           anchors.centerIn: parent
           text: "▦"
           color: panelLoader.item ? panelLoader.item.barIconColor : root.barForeground
-          font.family: root.bar ? root.bar.fontFamily : Style.font.family
+          font.family: Style.font.family
           font.pixelSize: Style.font.icon
         }
 
@@ -77,7 +77,7 @@ BarWidget {
             text: panelLoader.item && panelLoader.item.aggregate.running > 99
               ? "99+" : String(panelLoader.item ? panelLoader.item.aggregate.running : 0)
             color: Color.background
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.family: Style.font.family
             font.pixelSize: Math.max(Style.space(5), Style.font.caption - 2)
             font.bold: true
           }
