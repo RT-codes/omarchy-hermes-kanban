@@ -11,6 +11,13 @@ The widget shows aggregate running and blocked state. Its panel lets you select 
 - Non-interactive SSH public-key access to the remote Hermes host
 - Hermes 0.20 or newer on the remote host
 
+Encrypted private keys must be loaded into the standard user SSH agent. On
+Omarchy, unlock the key once after login with:
+
+```bash
+ssh-add ~/.ssh/id_ed25519
+```
+
 The default host is `ssh-ninalyx`. Verify it before installing:
 
 ```bash

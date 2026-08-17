@@ -58,6 +58,14 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ssh_bin=${HERMES_KANBAN_SSH_BIN:-ssh}
 timeout_sec=${HERMES_KANBAN_COMMAND_TIMEOUT_SEC:-20}
 
+# Omarchy exposes OpenSSH's user agent at a stable, socket-activated path.
+# Quickshell may have started before SSH_AUTH_SOCK entered the session
+# environment, so discover that socket without storing or decrypting keys here.
+if [[ -z ${SSH_AUTH_SOCK:-} ]]; then
+  runtime_dir=${XDG_RUNTIME_DIR:-/run/user/$UID}
+  [[ -S $runtime_dir/ssh-agent.socket ]] && export SSH_AUTH_SOCK=$runtime_dir/ssh-agent.socket
+fi
+
 [[ $timeout_sec =~ ^[1-9][0-9]{0,2}$ ]] || {
   echo "hermes-kanban-remote: invalid command timeout" >&2
   exit 2
