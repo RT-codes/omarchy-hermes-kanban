@@ -20,7 +20,10 @@ for icon in "${expected[@]}"; do
   file="$status_dir/$icon.svg"
   test -f "$file"
   grep -Fq 'stroke="#ffffff"' "$file"
-  ! grep -Fq 'currentColor' "$file"
+  if grep -Fq 'currentColor' "$file"; then
+    printf 'Untintable currentColor stroke in %s\n' "$file" >&2
+    exit 1
+  fi
 done
 
 test -s "$repo_dir/assets/tabler/LICENSE"

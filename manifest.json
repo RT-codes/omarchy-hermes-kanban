@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.davidojedalopez.hermes-kanban",
   "name": "Hermes Kanban",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "David Ojeda",
   "license": "MIT",
   "description": "Read-only progress for selected local or remote Hermes Kanban boards.",

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Make the status asset guardrail pass ShellCheck in GitHub Actions.
+
 ## 1.1.0
 
 - Replace abbreviated status captions with bundled Tabler SVG icons.
