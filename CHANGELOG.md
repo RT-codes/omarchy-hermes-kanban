@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- Make the bundled test runner work from checkout paths containing dots.
+
 ## 1.0.1
 
 - Make the transport guardrail test portable to clean Ubuntu CI runners.

@@ -28,7 +28,7 @@ jobs:
           shellcheck tests/run.sh tests/test_transport.sh
       - name: Run transport and worker tests
         run: |
-          python -m unittest tests/test_snapshot_worker.py
+          python tests/test_snapshot_worker.py
           tests/test_transport.sh
       - name: Check release hygiene
         run: |
