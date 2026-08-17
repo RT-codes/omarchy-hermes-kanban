@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-and-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+      - name: Validate scripts and manifest
+        run: |
+          bash -n tests/run.sh tests/test_transport.sh
+          python -m json.tool manifest.json >/dev/null
+          python -m py_compile bin/hermes-kanban-snapshot bin/snapshot_worker.py
+          shellcheck tests/run.sh tests/test_transport.sh
+      - name: Run transport and worker tests
+        run: |
+          python -m unittest tests/test_snapshot_worker.py
+          tests/test_transport.sh
+      - name: Check release hygiene
+        run: |
+          ! find . -path ./.git -prune -o -type l -print -quit | grep -q .
+          ! grep -RInE 'ssh-ninalyx|/home/(perro|ninalyx)|100[.]121[.]182[.]128' \
+            --exclude-dir=.git --exclude=preview.png --exclude=ci.yml .

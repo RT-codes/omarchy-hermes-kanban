@@ -2,6 +2,8 @@
 
 A read-only Omarchy Quattro bar widget for monitoring selected Hermes Kanban boards. Hermes may run locally or on a remote host reached through an existing OpenSSH configuration.
 
+![Hermes Kanban panel with sanitized fixture data](preview.png)
+
 The panel shows aggregate workflow counts and the running, blocked, review, and ready tasks for any number of selected boards. Local mode is the safe default. Task bodies are excluded unless explicitly enabled.
 
 ## Requirements

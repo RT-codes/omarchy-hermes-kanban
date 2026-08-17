@@ -11,4 +11,4 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
   /usr/lib/qt6/bin/qmltestrunner \
   -input "$repo_dir/tests" \
   -import "$repo_dir" \
-  -import /home/perro/.local/share/omarchy/shell
+  -import /usr/share/omarchy/shell
