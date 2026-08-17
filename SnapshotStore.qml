@@ -70,7 +70,7 @@ QtObject {
       profile = profiles[profileKey]
       stateFile.setText(Model.stateJson(profiles))
     }
-    selectionInitialized = profile && profile.initialized === true
+    selectionInitialized = profile ? profile.initialized === true : false
     selectedSlugs = profile ? Model.normalizedSelection(profile.selectedBoards) : []
   }
 
