@@ -22,13 +22,14 @@ jobs:
           python-version: "3.11"
       - name: Validate scripts and manifest
         run: |
-          bash -n tests/run.sh tests/test_transport.sh
+          bash -n tests/run.sh tests/test_assets.sh tests/test_transport.sh
           python -m json.tool manifest.json >/dev/null
           python -m py_compile bin/hermes-kanban-snapshot bin/snapshot_worker.py
-          shellcheck tests/run.sh tests/test_transport.sh
+          shellcheck tests/run.sh tests/test_assets.sh tests/test_transport.sh
       - name: Run transport and worker tests
         run: |
           python tests/test_snapshot_worker.py
+          tests/test_assets.sh
           tests/test_transport.sh
       - name: Check release hygiene
         run: |
