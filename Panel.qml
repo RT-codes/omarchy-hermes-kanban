@@ -340,10 +340,11 @@ Panel {
 
                       StatusIcon {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        width: Style.font.bodySmall
+                        width: Style.font.body
                         height: width
                         iconName: Model.statusIcon(statusCell.modelData)
-                        iconColor: statusCell.statusCount > 0 ? root.statusColor(statusCell.modelData) : root.dim
+                        iconColor: statusCell.statusCount > 0 ? root.statusColor(statusCell.modelData) : root.foreground
+                        opacity: statusCell.statusCount > 0 ? 1 : 0.45
                         spinning: statusCell.modelData === "running" && statusCell.statusCount > 0
                       }
                     }
