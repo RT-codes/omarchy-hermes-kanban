@@ -4,7 +4,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "perro.hermes-kanban"
+  moduleName: "io.github.davidojedalopez.hermes-kanban"
 
   function injectPanel() {
     var target = panelLoader.item
@@ -57,6 +57,7 @@ BarWidget {
         Text {
           anchors.centerIn: parent
           text: "▦"
+          textFormat: Text.PlainText
           color: panelLoader.item ? panelLoader.item.barIconColor : root.barForeground
           font.family: "monospace"
           font.pixelSize: Style.font.icon
@@ -76,6 +77,7 @@ BarWidget {
             anchors.centerIn: parent
             text: panelLoader.item && panelLoader.item.aggregate.running > 99
               ? "99+" : String(panelLoader.item ? panelLoader.item.aggregate.running : 0)
+            textFormat: Text.PlainText
             color: Color.background
             font.family: "monospace"
             font.pixelSize: Math.max(Style.space(5), Style.font.caption - 2)

@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Local/SSH transport supervisor for the Hermes Kanban widget."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import sys
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parent
+WORKER_PATH = ROOT / "snapshot_worker.py"
+HOST_RE = re.compile(r"^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,127}@)?[A-Za-z0-9][A-Za-z0-9._-]{0,253}$")
+MAX_TRANSPORT_OUTPUT = 2 * 1024 * 1024
+TRANSPORT_TIMEOUT_SECONDS = 25
+
+
+def load_worker():
+    spec = importlib.util.spec_from_file_location("snapshot_worker", WORKER_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Snapshot worker is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+WORKER = load_worker()
+
+
+def encoded_request(hermes_path: str, boards: list[str], include_bodies: bool) -> str:
+    hermes_path = WORKER.validate_hermes_path(hermes_path)
+    boards = WORKER.validate_boards(boards)
+    payload = json.dumps(
+        {"hermesPath": hermes_path, "boards": boards, "includeTaskBodies": include_bodies},
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def ssh_command(host: str, request: str) -> list[str]:
+    if not HOST_RE.fullmatch(host):
+        raise WORKER.SnapshotError("configuration", "SSH host or alias is invalid")
+    return [
+        os.environ.get("HERMES_KANBAN_SSH_BIN", "ssh"),
+        "-T",
+        "-o", "BatchMode=yes",
+        "-o", "PreferredAuthentications=publickey",
+        "-o", "PasswordAuthentication=no",
+        "-o", "KbdInteractiveAuthentication=no",
+        "-o", "NumberOfPasswordPrompts=0",
+        "-o", "StrictHostKeyChecking=yes",
+        "-o", "ClearAllForwardings=yes",
+        "-o", "ForwardAgent=no",
+        "-o", "ForwardX11=no",
+        "-o", "PermitLocalCommand=no",
+        "-o", "RemoteCommand=none",
+        "-o", "ControlPath=none",
+        "-o", "ConnectionAttempts=1",
+        "-o", "ConnectTimeout=5",
+        "-o", "ServerAliveInterval=5",
+        "-o", "ServerAliveCountMax=1",
+        "-o", "LogLevel=ERROR",
+        host,
+        "python3", "-", request,
+    ]
+
+
+def ensure_agent_socket() -> None:
+    if os.environ.get("SSH_AUTH_SOCK"):
+        return
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    candidate = Path(runtime_dir) / "ssh-agent.socket"
+    if candidate.is_socket():
+        os.environ["SSH_AUTH_SOCK"] = str(candidate)
+
+
+def collect_remote(host: str, request: str) -> dict[str, Any]:
+    ensure_agent_socket()
+    try:
+        return_code, stdout, stderr = WORKER.run_capped(
+            ssh_command(host, request),
+            input_bytes=WORKER_PATH.read_bytes(),
+            max_output=MAX_TRANSPORT_OUTPUT,
+            timeout=TRANSPORT_TIMEOUT_SECONDS,
+        )
+    except WORKER.SnapshotError as exc:
+        if exc.code == "hermes-not-found":
+            raise WORKER.SnapshotError("ssh-not-found", "OpenSSH client was not found") from exc
+        if exc.code == "hermes-timeout":
+            raise WORKER.SnapshotError("ssh-timeout", "SSH connection timed out") from exc
+        raise
+    if return_code == 255:
+        raise WORKER.SnapshotError("ssh-failed", "SSH authentication, host key, or connection failed")
+    if return_code != 0:
+        match = re.search(r"HERMES_KANBAN_ERROR:([a-z-]+):([^\r\n]{1,200})", stderr)
+        if match:
+            raise WORKER.SnapshotError(match.group(1), match.group(2))
+        raise WORKER.SnapshotError("remote-failed", "Remote snapshot command failed")
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise WORKER.SnapshotError("invalid-response", "Remote snapshot returned invalid JSON") from exc
+    return payload
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="hermes-kanban-snapshot")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    snapshot_parser = subparsers.add_parser("snapshot")
+    snapshot_parser.add_argument("--mode", choices=("local", "remote"), required=True)
+    snapshot_parser.add_argument("--hermes", default="hermes")
+    snapshot_parser.add_argument("--host", default="")
+    snapshot_parser.add_argument("--board", action="append", default=[])
+    snapshot_parser.add_argument("--include-task-bodies", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> int:
+    try:
+        args = parse_args(argv[1:])
+        request = encoded_request(args.hermes, args.board, args.include_task_bodies)
+        if args.mode == "local":
+            payload = WORKER.snapshot(args.hermes, args.board, args.include_task_bodies)
+        else:
+            if not args.host:
+                raise WORKER.SnapshotError("configuration", "SSH host or alias is required")
+            payload = collect_remote(args.host, request)
+        payload = WORKER.sanitize_payload(payload, args.board, args.include_task_bodies)
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if len(encoded) > WORKER.MAX_SNAPSHOT_OUTPUT:
+            raise WORKER.SnapshotError("response-too-large", "Hermes snapshot is too large")
+        sys.stdout.buffer.write(encoded + b"\n")
+        return 0
+    except WORKER.SnapshotError as exc:
+        print(f"HERMES_KANBAN_ERROR:{exc.code}:{exc}", file=sys.stderr)
+        return 10 if exc.code.startswith("ssh-") else 11
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

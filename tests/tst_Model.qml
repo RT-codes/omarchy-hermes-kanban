@@ -7,7 +7,7 @@ TestCase {
 
   function fixture() {
     return JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       fetchedAt: 1000,
       boards: [
         { slug: "alpha", name: "Alpha", is_current: true, counts: { running: 1, blocked: 1, done: 2 } },
@@ -36,16 +36,20 @@ TestCase {
 
   function test_invalid_snapshot() {
     verify(!Model.parseSnapshot("not-json").ok)
-    verify(!Model.parseSnapshot('{"schemaVersion":2}').ok)
+    verify(!Model.parseSnapshot('{"schemaVersion":1}').ok)
   }
 
   function test_state_round_trip_and_dedupe() {
-    var state = Model.parseState('{"version":1,"initialized":true,"selectedBoards":["alpha","alpha","beta"]}')
-    verify(state.initialized)
-    compare(state.selectedBoards.length, 2)
-    compare(state.selectedBoards[1], "beta")
-    var again = Model.parseState(Model.stateJson(true, state.selectedBoards))
-    compare(again.selectedBoards.length, 2)
+    var legacy = Model.parseState('{"version":1,"initialized":true,"selectedBoards":["alpha","alpha","beta"]}')
+    verify(legacy.profiles.legacy.initialized)
+    compare(legacy.profiles.legacy.selectedBoards.length, 2)
+    var profiles = {
+      local: legacy.profiles.legacy,
+      "remote:workstation": { initialized: true, selectedBoards: ["beta"] }
+    }
+    var again = Model.parseState(Model.stateJson(profiles))
+    compare(again.profiles.local.selectedBoards.length, 2)
+    compare(again.profiles["remote:workstation"].selectedBoards[0], "beta")
   }
 
   function test_missing_board_is_preserved() {
@@ -64,5 +68,12 @@ TestCase {
     var sorted = Model.tasksForStatus(tasks, "ready")
     compare(sorted[0].id, "b")
     compare(Model.elapsed(900, 1000), "1m")
+  }
+
+  function test_board_metadata_counts_are_not_replaced_by_filtered_tasks() {
+    var parsed = Model.parseSnapshot(fixture()).data
+    var board = Model.selectedBoardModels(parsed, ["alpha"])[0]
+    compare(board.counts.running, 1)
+    compare(board.counts.done, 2)
   }
 }

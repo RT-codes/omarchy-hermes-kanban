@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "perro.hermes-kanban",
+  "id": "io.github.davidojedalopez.hermes-kanban",
   "name": "Hermes Kanban",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": "David Ojeda",
   "license": "MIT",
-  "description": "Read-only progress for selected Hermes Kanban boards on a remote host.",
+  "description": "Read-only progress for selected local or remote Hermes Kanban boards.",
   "kinds": [
     "bar-widget"
   ],
@@ -19,25 +19,42 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "sshHost": "ssh-ninalyx",
-      "remoteHermesPath": "hermes",
+      "connectionMode": "Local",
+      "hermesPath": "hermes",
+      "sshHost": "",
+      "includeTaskBodies": false,
       "openRefreshSec": 15,
-      "backgroundRefreshSec": 60
+      "backgroundRefreshSec": 120
     },
     "schema": [
       {
-        "key": "sshHost",
-        "type": "string",
-        "label": "SSH host",
-        "defaultValue": "ssh-ninalyx",
-        "description": "OpenSSH Host alias used for the remote Hermes machine."
+        "key": "connectionMode",
+        "type": "enum",
+        "label": "Hermes host",
+        "options": ["Local", "Remote"],
+        "defaultValue": "Local",
+        "description": "Run Hermes on this computer or through an existing OpenSSH host alias."
       },
       {
-        "key": "remoteHermesPath",
+        "key": "hermesPath",
         "type": "string",
-        "label": "Remote Hermes executable",
+        "label": "Hermes executable",
         "defaultValue": "hermes",
-        "description": "Command name or absolute path to Hermes on the remote host."
+        "description": "Command name or absolute executable path on the selected host."
+      },
+      {
+        "key": "sshHost",
+        "type": "string",
+        "label": "Remote SSH host",
+        "defaultValue": "",
+        "description": "OpenSSH Host alias used only in Remote mode."
+      },
+      {
+        "key": "includeTaskBodies",
+        "type": "boolean",
+        "label": "Show task bodies",
+        "defaultValue": false,
+        "description": "Off by default to minimize task content transferred into the shell."
       },
       {
         "key": "openRefreshSec",
@@ -52,10 +69,10 @@
         "key": "backgroundRefreshSec",
         "type": "integer",
         "label": "Background refresh interval (seconds)",
-        "min": 15,
+        "min": 30,
         "max": 3600,
         "step": 15,
-        "defaultValue": 60
+        "defaultValue": 120
       }
     ]
   }

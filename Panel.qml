@@ -6,11 +6,12 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "." as Plugin
 
 Panel {
   id: root
-  moduleName: "perro.hermes-kanban"
-  ipcTarget: "perro.hermes-kanban"
+  moduleName: "io.github.davidojedalopez.hermes-kanban"
+  ipcTarget: "io.github.davidojedalopez.hermes-kanban"
   manageIpc: false
 
   property Item anchorItem: null
@@ -25,28 +26,15 @@ Panel {
   readonly property color readyColor: "#60a5fa"
   readonly property string fontFamily: bar && bar.fontFamily ? bar.fontFamily : "monospace"
 
-  readonly property string sshHost: String(setting("sshHost", "ssh-ninalyx") || "ssh-ninalyx")
-  readonly property string remoteHermesPath: String(setting("remoteHermesPath", "hermes") || "hermes")
-  readonly property int openRefreshSec: boundedSetting("openRefreshSec", 15, 5, 300)
-  readonly property int backgroundRefreshSec: boundedSetting("backgroundRefreshSec", 60, 15, 3600)
-  readonly property string helperPath: String(Qt.resolvedUrl("bin/hermes-kanban-remote")).replace(/^file:\/\//, "")
-  readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omarchy"
-  readonly property string statePath: stateDir + "/hermes-kanban.json"
-
-  property bool stateLoaded: false
-  property bool selectionInitialized: false
-  property var selectedSlugs: []
-  property var snapshot: null
-  property bool refreshing: false
-  property bool stale: false
-  property string lastError: ""
-  property string stdoutText: ""
-  property string stderrText: ""
-  property int refreshExitCode: -1
-  property bool stdoutFinished: false
-  property bool stderrFinished: false
-  property bool processFinished: false
-  property double nowSeconds: Date.now() / 1000
+  readonly property var store: Plugin.SnapshotStore
+  readonly property string connectionMode: store.connectionMode
+  readonly property string endpointLabel: connectionMode === "remote" ? store.sshHost : "Local"
+  readonly property var selectedSlugs: store.selectedSlugs
+  readonly property var snapshot: store.snapshot
+  readonly property bool refreshing: store.refreshing
+  readonly property bool stale: store.stale
+  readonly property string lastError: store.lastError
+  readonly property double nowSeconds: store.nowSeconds
 
   readonly property var aggregate: Model.aggregate(snapshot, selectedSlugs)
   readonly property var selectedBoards: Model.selectedBoardModels(snapshot, selectedSlugs)
@@ -61,10 +49,15 @@ Panel {
       ? "Hermes Kanban · choose boards"
       : "Hermes Kanban · " + aggregate.running + " running, " + aggregate.blocked + " blocked"
 
-  function boundedSetting(name, fallback, min, max) {
-    var n = parseInt(String(setting(name, fallback)), 10)
-    if (!isFinite(n)) n = fallback
-    return Math.max(min, Math.min(max, n))
+  function configureStore() {
+    store.configure(
+      setting("connectionMode", "Local"),
+      setting("hermesPath", "hermes"),
+      setting("sshHost", ""),
+      setting("includeTaskBodies", false) === true,
+      setting("openRefreshSec", 15),
+      setting("backgroundRefreshSec", 120)
+    )
   }
 
   function statusColor(status) {
@@ -77,78 +70,11 @@ Panel {
   }
 
   function refresh() {
-    if (!stateLoaded || refreshing) return
-    stdoutText = ""
-    stderrText = ""
-    refreshExitCode = -1
-    stdoutFinished = false
-    stderrFinished = false
-    processFinished = false
-    var command = [helperPath, "snapshot", "--host", sshHost, "--hermes", remoteHermesPath]
-    for (var i = 0; i < selectedSlugs.length; i++) command.push("--board", String(selectedSlugs[i]))
-    refreshProc.command = command
-    refreshing = true
-    refreshProc.running = true
-  }
-
-  function maybeFinishRefresh() {
-    if (processFinished && stdoutFinished && stderrFinished) finishRefresh()
-  }
-
-  function finishRefresh() {
-    if (refreshExitCode < 0) return
-    refreshing = false
-    if (refreshExitCode !== 0) {
-      stale = snapshot !== null
-      var clean = String(stderrText || "").replace(/\s+/g, " ").trim()
-      lastError = clean || (refreshExitCode === 10 ? "SSH connection failed" : "Remote Hermes request failed")
-      refreshTimer.restart()
-      return
-    }
-
-    var result = Model.parseSnapshot(stdoutText)
-    if (!result.ok) {
-      stale = snapshot !== null
-      lastError = result.error
-      refreshTimer.restart()
-      return
-    }
-
-    snapshot = result.data
-    stale = false
-    lastError = ""
-
-    if (!selectionInitialized) {
-      selectionInitialized = true
-      var initial = Model.currentBoardSlug(snapshot)
-      selectedSlugs = initial === "" ? [] : [initial]
-      saveState()
-      if (initial !== "") Qt.callLater(refresh)
-    }
-    refreshTimer.restart()
-  }
-
-  function loadState(raw) {
-    if (stateLoaded) return
-    var state = Model.parseState(raw)
-    selectionInitialized = state.initialized
-    selectedSlugs = state.selectedBoards
-    stateLoaded = true
-    refresh()
-  }
-
-  function saveState() {
-    if (!stateLoaded) return
-    stateFile.setText(Model.stateJson(selectionInitialized, selectedSlugs))
+    store.refresh()
   }
 
   function applyBoardSelection(values) {
-    var next = []
-    for (var i = 0; values && i < values.length; i++) next.push(String(values[i]))
-    selectionInitialized = true
-    selectedSlugs = next
-    saveState()
-    refresh()
+    store.applyBoardSelection(values)
   }
 
   function openHermes() {
@@ -161,88 +87,18 @@ Panel {
   }
 
   onOpenedChanged: {
-    refreshTimer.restart()
+    store.setPanelOpen(opened)
     if (opened) {
-      refresh()
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
     }
   }
 
+  onSettingsChanged: configureStore()
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  Process {
-    id: ensureStateDir
-    command: ["mkdir", "-p", root.stateDir]
-    onExited: function(exitCode) {
-      if (exitCode === 0) stateFile.reload()
-      else root.loadState("")
-    }
-  }
-
-  FileView {
-    id: stateFile
-    path: root.statePath
-    watchChanges: false
-    atomicWrites: true
-    printErrors: false
-    onLoaded: root.loadState(text())
-    onLoadFailed: root.loadState("")
-  }
-
-  Process {
-    id: refreshProc
-    running: false
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        root.stdoutText = String(text || "")
-        root.stdoutFinished = true
-        root.maybeFinishRefresh()
-      }
-    }
-    stderr: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        root.stderrText = String(text || "")
-        root.stderrFinished = true
-        root.maybeFinishRefresh()
-      }
-    }
-    onExited: function(exitCode) {
-      root.refreshExitCode = exitCode
-      root.processFinished = true
-      root.maybeFinishRefresh()
-    }
-  }
-
-  Timer {
-    id: refreshTimer
-    interval: (root.opened ? root.openRefreshSec : root.backgroundRefreshSec) * 1000
-    repeat: false
-    running: root.stateLoaded
-    onTriggered: root.refresh()
-  }
-
-  Timer {
-    interval: 1000
-    repeat: true
-    running: root.opened
-    onTriggered: root.nowSeconds = Date.now() / 1000
-  }
-
-  Component.onCompleted: ensureStateDir.running = true
-
-  IpcHandler {
-    target: root.ipcTarget
-    function open() { root.open() }
-    function close() { root.close() }
-    function show() { root.open() }
-    function hide() { root.close() }
-    function toggle() { root.toggle() }
-    function refresh() { root.refresh(); return "ok" }
-    function status() { return root.tooltipText }
-  }
+  Component.onCompleted: configureStore()
 
   BarIconButton {
     id: button
@@ -298,14 +154,15 @@ Panel {
           PanelHero {
             width: parent.width
             title: "Hermes Kanban"
-            meta: root.refreshing ? "Refreshing remote boards…"
+            meta: root.refreshing ? "Refreshing " + root.connectionMode + " boards…"
               : root.snapshot ? Model.ageLabel(root.snapshot.fetchedAt, root.nowSeconds)
               : "Waiting for the first snapshot"
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconComponent: Component {
-              Text {
-                text: "▦"
+            Text {
+              text: "▦"
+              textFormat: Text.PlainText
                 color: root.barIconColor
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
@@ -340,7 +197,8 @@ Panel {
             Item { Layout.fillWidth: true }
 
             Text {
-              text: root.sshHost
+              text: root.endpointLabel
+              textFormat: Text.PlainText
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -353,6 +211,7 @@ Panel {
             visible: root.lastError !== ""
             width: parent.width
             text: (root.stale ? "Showing stale data · " : "") + root.lastError
+            textFormat: Text.PlainText
             color: root.urgent
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -375,7 +234,9 @@ Panel {
           Text {
             visible: root.selectedSlugs.length === 0
             width: parent.width
-            text: root.snapshot ? "Choose one or more boards to monitor." : "Connect over SSH to discover boards."
+            text: root.snapshot ? "Choose one or more boards to monitor."
+              : (root.connectionMode === "remote" ? "Connect over SSH to discover boards." : "Start Hermes locally to discover boards.")
+            textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
@@ -407,6 +268,7 @@ Panel {
 
                   Text {
                     text: modelData.name
+                    textFormat: Text.PlainText
                     color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.heading
@@ -417,6 +279,7 @@ Panel {
 
                   Text {
                     text: modelData.missing ? modelData.slug + " · unavailable" : modelData.slug
+                    textFormat: Text.PlainText
                     color: modelData.missing ? root.urgent : root.dim
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.caption
@@ -427,6 +290,7 @@ Panel {
 
                 Text {
                   text: modelData.counts.running + " running"
+                  textFormat: Text.PlainText
                   color: modelData.counts.running > 0 ? root.runningColor : root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -560,6 +424,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: taskRow.task.title
+          textFormat: Text.PlainText
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
@@ -570,6 +435,7 @@ Panel {
           text: taskRow.task.status === "running"
             ? Model.elapsed(taskRow.task.startedAt, root.nowSeconds)
             : (taskRow.task.assignee || "unassigned")
+          textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
@@ -580,6 +446,7 @@ Panel {
         visible: taskRow.expanded && taskRow.task.body !== ""
         Layout.fillWidth: true
         text: taskRow.task.body
+        textFormat: Text.PlainText
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -596,6 +463,7 @@ Panel {
         Text {
           Layout.fillWidth: true
           text: taskRow.task.id + (taskRow.task.assignee ? " · " + taskRow.task.assignee : "")
+          textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption

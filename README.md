@@ -1,73 +1,103 @@
 # Hermes Kanban for Omarchy
 
-A read-only Omarchy bar plugin for monitoring selected Hermes Kanban boards on a remote host.
+A read-only Omarchy Quattro bar widget for monitoring selected Hermes Kanban boards. Hermes may run locally or on a remote host reached through an existing OpenSSH configuration.
 
-The widget shows aggregate running and blocked state. Its panel lets you select multiple boards, inspect the Hermes status funnel, and expand running, blocked, review, and ready tasks. It refreshes through the Hermes CLI over SSH; it does not use dashboard cookies or issue mutating commands.
+The panel shows aggregate workflow counts and the running, blocked, review, and ready tasks for any number of selected boards. Local mode is the safe default. Task bodies are excluded unless explicitly enabled.
 
 ## Requirements
 
-- Omarchy 4 with `omarchy-shell`
-- `ssh`, `python3`, and `timeout` locally
-- Non-interactive SSH public-key access to the remote Hermes host
-- Hermes 0.20 or newer on the remote host
+- Omarchy Quattro with `omarchy-shell`
+- Hermes Agent 0.20 or newer on the selected host
+- Python 3 locally and, for Remote mode, on the remote host
+- OpenSSH client and non-interactive public-key authentication for Remote mode
 
-Encrypted private keys must be loaded into the standard user SSH agent. On
-Omarchy, unlock the key once after login with:
-
-```bash
-ssh-add ~/.ssh/id_ed25519
-```
-
-The default host is `ssh-ninalyx`. Verify it before installing:
-
-```bash
-ssh -F ~/.ssh/config -o BatchMode=yes ssh-ninalyx 'hermes version'
-```
-
-If Hermes is not on the non-interactive PATH, set the widget's **Remote Hermes executable** to its absolute path.
+The plugin uses only Python's standard library. It does not install packages, create services, request privileges, or manage SSH keys.
 
 ## Install
 
-Commit this repository, then install its local Git URL:
-
 ```bash
-omarchy plugin add file:///home/perro/dev/omarchy-hermes-kanban --enable --yes
+omarchy plugin add https://github.com/davidojedalopez/omarchy-hermes-kanban.git --enable
 ```
 
-The plugin is added to the right bar section. Move it with `omarchy bar move perro.hermes-kanban --section right` if needed.
+The permanent plugin ID is `io.github.davidojedalopez.hermes-kanban`.
 
-To update the installed clone after committing local changes:
+## Configure
+
+Open Omarchy's bar settings and configure the Hermes Kanban widget:
+
+- **Hermes host:** `Local` or `Remote`; defaults to `Local`.
+- **Hermes executable:** `hermes` or an absolute executable path on the selected host.
+- **Remote SSH host:** an OpenSSH host or alias, used only in Remote mode.
+- **Show task bodies:** off by default to minimize task content entering the shell.
+- **Refresh intervals:** 15 seconds while open and 120 seconds in the background by default.
+
+Board selection is available inside the panel and is stored separately for each local or remote endpoint.
+
+### Remote setup
+
+Create and test the host in `~/.ssh/config` yourself. The plugin never changes SSH configuration or accepts a host key on your behalf.
+
+```sshconfig
+Host hermes-workstation
+    HostName example.internal
+    User your-user
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+```
+
+Verify the host key and unlock the key interactively before enabling Remote mode:
 
 ```bash
-omarchy plugin update perro.hermes-kanban --yes
+ssh hermes-workstation true
+ssh -o BatchMode=yes hermes-workstation '/absolute/path/to/hermes version'
 ```
+
+If the key is encrypted, load it into your existing SSH agent with `ssh-add`. The plugin honors `SSH_AUTH_SOCK` and can also discover Omarchy's standard `$XDG_RUNTIME_DIR/ssh-agent.socket`; it never reads a private key itself.
 
 ## Controls
 
-- Left click: open or close the progress dashboard
-- Middle/right click: refresh
+- Left click: open or close the progress panel
+- Middle or right click: refresh
 - `R` while open: refresh
-- `O` while open: launch Hermes Desktop
-- Board picker: select any number of boards; the choice persists locally
+- `O` while open: launch the local Hermes Desktop application
 - Task row: expand details and copy the task ID
 
-Selection state is stored at `~/.local/state/omarchy/hermes-kanban.json`. Task snapshots are retained only in memory so remote task content is not cached to disk.
+Selection state is stored at `~/.local/state/omarchy/hermes-kanban.json`. Task snapshots stay in memory and are not written to disk.
 
-## Security
+## Security model
 
-The helper validates its SSH alias, Hermes executable path, and board slugs before connecting. Each refresh uses one bounded SSH session with `BatchMode=yes` and strict host-key checking. The remote program invokes only:
+Omarchy plugins run unsandboxed with the current user's permissions. This plugin narrows its runtime behavior as follows:
 
-```text
-hermes kanban boards list --json
-hermes kanban --board <slug> list --json
+- Executes only `hermes kanban boards list --json` and `hermes kanban --board SLUG list --json`.
+- Invokes Hermes without a local shell.
+- Encodes Remote-mode request data before it reaches the remote login shell.
+- Requires strict host-key checking and public-key, non-interactive SSH authentication.
+- Disables TTYs, passwords, keyboard-interactive authentication, agent/X11/port forwarding, local commands, and SSH connection sharing.
+- Allowlists board and task fields, filters task details to active workflow states, removes control characters, and caps inputs, strings, tasks, command output, and final snapshots.
+- Renders Hermes-derived strings as plain text.
+- Converts command failures into stable messages instead of showing raw remote stderr.
+
+The configured OpenSSH host entry remains trusted user configuration. It may intentionally contain a `ProxyJump` or `ProxyCommand`; review it before allowing an unsandboxed plugin to use it. See [SECURITY.md](SECURITY.md) for reporting and trust boundaries.
+
+## Remove
+
+```bash
+omarchy plugin remove io.github.davidojedalopez.hermes-kanban
 ```
 
-No password, private key, dashboard token, or OAuth cookie is stored by the plugin.
+Removing the plugin does not delete its board-selection state. Remove it separately if desired:
 
-## Test
+```bash
+gio trash ~/.local/state/omarchy/hermes-kanban.json
+```
+
+## Development
 
 ```bash
 tests/run.sh
 omarchy plugin validate .
-qmllint -I /usr/lib/qt6/qml -I /usr/share/omarchy/shell BarWidget.qml Panel.qml
+qmllint -I /usr/lib/qt6/qml -I /usr/share/omarchy/shell \
+  BarWidget.qml Panel.qml SnapshotStore.qml
 ```
+
+The test suite covers local and remote transports, exact SSH guardrails, schema and state migration, data minimization, command validation, and the QML model.

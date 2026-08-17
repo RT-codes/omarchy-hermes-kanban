@@ -70,7 +70,7 @@ function parseSnapshot(raw) {
   } catch (e) {
     return { ok: false, error: "Hermes returned invalid JSON" }
   }
-  if (!parsed || typeof parsed !== "object" || parsed.schemaVersion !== 1)
+  if (!parsed || typeof parsed !== "object" || parsed.schemaVersion !== 2)
     return { ok: false, error: "Unsupported Hermes Kanban snapshot" }
 
   var boards = []
@@ -96,7 +96,7 @@ function parseSnapshot(raw) {
   return {
     ok: true,
     data: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       fetchedAt: numberValue(parsed.fetchedAt, 0),
       boards: boards,
       tasksByBoard: tasksByBoard
@@ -106,31 +106,52 @@ function parseSnapshot(raw) {
 
 function parseState(raw) {
   if (!raw || String(raw).trim() === "")
-    return { initialized: false, selectedBoards: [] }
+    return { profiles: {} }
   try {
     var parsed = JSON.parse(String(raw))
-    if (!parsed || parsed.version !== 1) return { initialized: false, selectedBoards: [] }
-    var selected = []
-    var source = arrayFrom(parsed.selectedBoards)
-    var seen = {}
-    for (var i = 0; i < source.length; i++) {
-      var slug = String(source[i] || "")
-      if (slug !== "" && !seen[slug]) {
-        selected.push(slug)
-        seen[slug] = true
+    if (!parsed || typeof parsed !== "object") return { profiles: {} }
+    if (parsed.version === 1) {
+      return { profiles: { legacy: {
+        initialized: parsed.initialized === true,
+        selectedBoards: normalizedSelection(parsed.selectedBoards)
+      } } }
+    }
+    if (parsed.version !== 2 || !parsed.profiles || typeof parsed.profiles !== "object")
+      return { profiles: {} }
+    var profiles = {}
+    for (var key in parsed.profiles) {
+      if (String(key).length <= 300) {
+        var profile = parsed.profiles[key]
+        profiles[String(key)] = {
+          initialized: profile && profile.initialized === true,
+          selectedBoards: normalizedSelection(profile ? profile.selectedBoards : [])
+        }
       }
     }
-    return { initialized: parsed.initialized === true, selectedBoards: selected }
+    return { profiles: profiles }
   } catch (e) {
-    return { initialized: false, selectedBoards: [] }
+    return { profiles: {} }
   }
 }
 
-function stateJson(initialized, selectedBoards) {
+function normalizedSelection(values) {
+  var selected = []
+  var source = arrayFrom(values)
+  var seen = {}
+  for (var i = 0; i < source.length && selected.length < 20; i++) {
+    var slug = String(source[i] || "")
+    if (/^[a-z0-9][a-z0-9-]{0,63}$/.test(slug) && !seen[slug]) {
+      selected.push(slug)
+      seen[slug] = true
+    }
+  }
+  return selected
+}
+
+function stateJson(profiles) {
   return JSON.stringify({
-    version: 1,
-    initialized: initialized === true,
-    selectedBoards: arrayFrom(selectedBoards)
+    version: 2,
+    profiles: profiles && typeof profiles === "object" ? profiles : {}
   }, null, 2) + "\n"
 }
 
@@ -187,7 +208,7 @@ function selectedBoardModels(snapshot, selectedSlugs) {
       description: meta ? meta.description : "",
       missing: !meta,
       tasks: tasks,
-      counts: tasks.length > 0 ? countsForTasks(tasks) : (meta ? meta.counts : emptyCounts())
+      counts: meta ? meta.counts : countsForTasks(tasks)
     })
   }
   return out
