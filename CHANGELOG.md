@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- Replace abbreviated status captions with bundled Tabler SVG icons.
+- Add status-and-count tooltips and accessible names to board summary cells.
+- Animate the running icon when a board has active work.
+
 ## 1.0.2
 
 - Make the bundled test runner work from checkout paths containing dots.

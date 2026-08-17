@@ -76,4 +76,16 @@ TestCase {
     compare(board.counts.running, 1)
     compare(board.counts.done, 2)
   }
+
+  function test_status_icon_mapping() {
+    compare(Model.statusIcon("triage"), "inbox")
+    compare(Model.statusIcon("todo"), "list-check")
+    compare(Model.statusIcon("scheduled"), "calendar-time")
+    compare(Model.statusIcon("ready"), "player-play")
+    compare(Model.statusIcon("running"), "loader-2")
+    compare(Model.statusIcon("blocked"), "alert-octagon")
+    compare(Model.statusIcon("review"), "eye-check")
+    compare(Model.statusIcon("done"), "circle-check")
+    compare(Model.statusIcon("unknown"), "list-check")
+  }
 }

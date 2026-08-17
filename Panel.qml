@@ -309,10 +309,20 @@ Panel {
                   delegate: Rectangle {
                     id: statusCell
                     required property string modelData
+                    readonly property int statusCount: Math.max(0, Number(boardSection.modelData.counts[modelData] || 0))
                     Layout.fillWidth: true
                     implicitHeight: funnelColumn.implicitHeight + Style.space(8)
                     radius: Style.cornerRadius
                     color: Style.normalFillFor(root.foreground, Color.accent)
+                    Accessible.name: Model.statusLabel(modelData) + ": " + statusCount
+                    Accessible.role: Accessible.StaticText
+                    ToolTip.visible: statusHover.hovered
+                    ToolTip.delay: 400
+                    ToolTip.text: Accessible.name
+
+                    HoverHandler {
+                      id: statusHover
+                    }
 
                     Column {
                       id: funnelColumn
@@ -321,20 +331,20 @@ Panel {
 
                       Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: statusCell.modelData === "blocked" && boardSection.modelData.counts[statusCell.modelData] > 0
-                          ? "!" : String(boardSection.modelData.counts[statusCell.modelData] || 0)
+                        text: String(statusCell.statusCount)
                         color: root.statusColor(statusCell.modelData)
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.body
-                        font.bold: boardSection.modelData.counts[statusCell.modelData] > 0
+                        font.bold: statusCell.statusCount > 0
                       }
 
-                      Text {
+                      StatusIcon {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: Model.statusLabel(statusCell.modelData).slice(0, 3).toUpperCase()
-                        color: root.dim
-                        font.family: root.fontFamily
-                        font.pixelSize: Math.max(Style.space(5), Style.font.caption - 2)
+                        width: Style.font.bodySmall
+                        height: width
+                        iconName: Model.statusIcon(statusCell.modelData)
+                        iconColor: statusCell.statusCount > 0 ? root.statusColor(statusCell.modelData) : root.dim
+                        spinning: statusCell.modelData === "running" && statusCell.statusCount > 0
                       }
                     }
                   }

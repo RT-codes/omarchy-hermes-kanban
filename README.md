@@ -6,6 +6,10 @@ A read-only Omarchy Quattro bar widget for monitoring selected Hermes Kanban boa
 
 The panel shows aggregate workflow counts and the running, blocked, review, and ready tasks for any number of selected boards. Local mode is the safe default. Task bodies are excluded unless explicitly enabled.
 
+Board summaries use bundled, theme-colored [Tabler Icons](assets/tabler/README.md)
+for each Hermes status, so they remain legible without relying on a particular
+Nerd Font. Hover an icon to see its full status label and count.
+
 ## Requirements
 
 - Omarchy Quattro with `omarchy-shell`

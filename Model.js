@@ -268,6 +268,20 @@ function statusLabel(status) {
   return labels[status] || status
 }
 
+function statusIcon(status) {
+  var icons = {
+    triage: "inbox",
+    todo: "list-check",
+    scheduled: "calendar-time",
+    ready: "player-play",
+    running: "loader-2",
+    blocked: "alert-octagon",
+    review: "eye-check",
+    done: "circle-check"
+  }
+  return icons[status] || "list-check"
+}
+
 function statusGlyph(status) {
   var glyphs = {
     triage: "◇",
