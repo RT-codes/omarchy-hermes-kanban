@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Sanitized Hermes CLI fixture used for preview and manual UI checks."""
+
+import json
+import sys
+
+
+if "boards" in sys.argv:
+    print(json.dumps([
+        {
+            "slug": "launch",
+            "name": "Launch",
+            "is_current": True,
+            "counts": {"ready": 2, "running": 1, "blocked": 1, "review": 1, "done": 12},
+        },
+        {
+            "slug": "research",
+            "name": "Research",
+            "is_current": False,
+            "counts": {"ready": 1, "running": 1, "done": 8},
+        },
+    ]))
+elif "launch" in sys.argv:
+    print(json.dumps([
+        {"id": "task-104", "title": "Verify release checklist", "body": "Review install, update, and removal paths.", "assignee": "agent", "status": "running", "priority": 3, "started_at": 1786919400},
+        {"id": "task-103", "title": "Resolve compatibility check", "body": "Confirm the widget against Omarchy Quattro.", "assignee": "agent", "status": "blocked", "priority": 2},
+        {"id": "task-105", "title": "Review marketplace copy", "body": "Check privacy and dependency disclosures.", "assignee": "reviewer", "status": "review", "priority": 2},
+        {"id": "task-106", "title": "Capture sanitized preview", "body": "Use fixture data only.", "assignee": "agent", "status": "ready", "priority": 1},
+    ]))
+else:
+    print(json.dumps([
+        {"id": "task-201", "title": "Compare refresh strategies", "body": "", "assignee": "agent", "status": "running", "priority": 1, "started_at": 1786917600},
+        {"id": "task-202", "title": "Document findings", "body": "", "assignee": "agent", "status": "ready", "priority": 1},
+    ]))
