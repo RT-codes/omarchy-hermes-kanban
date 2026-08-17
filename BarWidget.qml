@@ -92,7 +92,7 @@ BarWidget {
           width: Style.space(5)
           height: width
           radius: width / 2
-          color: panelLoader.item ? panelLoader.item.urgent : Color.urgent
+          color: panelLoader.item ? panelLoader.item.blockedColor : "#ff6b6b"
         }
       }
     }

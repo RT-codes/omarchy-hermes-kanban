@@ -282,6 +282,32 @@ function statusIcon(status) {
   return icons[status] || "list-check"
 }
 
+function colorChannelLuminance(value) {
+  var channel = Number(value)
+  if (!isFinite(channel)) return 0
+  return channel <= 0.04045
+    ? channel / 12.92
+    : Math.pow((channel + 0.055) / 1.055, 2.4)
+}
+
+function colorLuminance(color) {
+  return 0.2126 * colorChannelLuminance(color.r)
+    + 0.7152 * colorChannelLuminance(color.g)
+    + 0.0722 * colorChannelLuminance(color.b)
+}
+
+function contrastRatio(first, second) {
+  var firstLuminance = colorLuminance(first)
+  var secondLuminance = colorLuminance(second)
+  var lighter = Math.max(firstLuminance, secondLuminance)
+  var darker = Math.min(firstLuminance, secondLuminance)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function higherContrastColor(first, second, background) {
+  return contrastRatio(first, background) >= contrastRatio(second, background) ? first : second
+}
+
 function statusGlyph(status) {
   var glyphs = {
     triage: "◇",

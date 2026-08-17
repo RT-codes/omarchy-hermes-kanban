@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2
+
+- Give Blocked a dedicated red palette instead of inheriting a theme's generic urgent color.
+- Select the red variant with stronger contrast against the active popup surface.
+- Add a tinted status cell, border, and task-row edge marker for non-color-only emphasis.
+
 ## 1.1.1
 
 - Make the status asset guardrail pass ShellCheck in GitHub Actions.

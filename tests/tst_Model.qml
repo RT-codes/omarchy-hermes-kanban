@@ -88,4 +88,16 @@ TestCase {
     compare(Model.statusIcon("done"), "circle-check")
     compare(Model.statusIcon("unknown"), "list-check")
   }
+
+  function test_blocked_color_contrast() {
+    var brightRed = Qt.color("#ff6b6b")
+    var darkRed = Qt.color("#b42318")
+    var darkSurface = Qt.color("#0b0c16")
+    var lightSurface = Qt.color("#f8fafc")
+
+    compare(Model.higherContrastColor(brightRed, darkRed, darkSurface), brightRed)
+    verify(Model.contrastRatio(brightRed, darkSurface) >= 4.5)
+    compare(Model.higherContrastColor(brightRed, darkRed, lightSurface), darkRed)
+    verify(Model.contrastRatio(darkRed, lightSurface) >= 4.5)
+  }
 }

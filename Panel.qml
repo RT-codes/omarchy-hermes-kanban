@@ -21,6 +21,10 @@ Panel {
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
+  readonly property color surface: Color.popups.background
+  readonly property color blockedBrightColor: "#ff6b6b"
+  readonly property color blockedDarkColor: "#b42318"
+  readonly property color blockedColor: Model.higherContrastColor(blockedBrightColor, blockedDarkColor, surface)
   readonly property color runningColor: "#34d399"
   readonly property color reviewColor: "#fbbf24"
   readonly property color readyColor: "#60a5fa"
@@ -39,7 +43,7 @@ Panel {
   readonly property var aggregate: Model.aggregate(snapshot, selectedSlugs)
   readonly property var selectedBoards: Model.selectedBoardModels(snapshot, selectedSlugs)
   readonly property color barIconColor: lastError !== "" && !snapshot ? urgent
-    : aggregate.blocked > 0 ? urgent
+    : aggregate.blocked > 0 ? blockedColor
     : aggregate.review > 0 ? reviewColor
     : aggregate.running > 0 ? runningColor
     : dim
@@ -61,7 +65,7 @@ Panel {
   }
 
   function statusColor(status) {
-    if (status === "blocked") return urgent
+    if (status === "blocked") return blockedColor
     if (status === "review") return reviewColor
     if (status === "running") return runningColor
     if (status === "ready") return readyColor
@@ -310,10 +314,15 @@ Panel {
                     id: statusCell
                     required property string modelData
                     readonly property int statusCount: Math.max(0, Number(boardSection.modelData.counts[modelData] || 0))
+                    readonly property bool blockedActive: modelData === "blocked" && statusCount > 0
                     Layout.fillWidth: true
                     implicitHeight: funnelColumn.implicitHeight + Style.space(8)
                     radius: Style.cornerRadius
-                    color: Style.normalFillFor(root.foreground, Color.accent)
+                    color: blockedActive
+                      ? Util.alpha(root.blockedColor, 0.15)
+                      : Style.normalFillFor(root.foreground, Color.accent)
+                    border.width: blockedActive ? 1 : 0
+                    border.color: blockedActive ? Util.alpha(root.blockedColor, 0.72) : "transparent"
                     Accessible.name: Model.statusLabel(modelData) + ": " + statusCount
                     Accessible.role: Accessible.StaticText
                     ToolTip.visible: statusHover.hovered
@@ -404,6 +413,16 @@ Panel {
     property bool expanded: false
     foreground: root.foreground
     implicitHeight: taskContent.implicitHeight + Style.space(12)
+
+    Rectangle {
+      visible: taskRow.task && taskRow.task.status === "blocked"
+      anchors.left: parent.left
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      width: 3
+      radius: width / 2
+      color: root.blockedColor
+    }
 
     MouseArea {
       anchors.fill: parent
