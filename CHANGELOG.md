@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Make the transport guardrail test portable to clean Ubuntu CI runners.
+
 ## 1.0.0
 
 - Add local and remote Hermes modes with Local as the default.

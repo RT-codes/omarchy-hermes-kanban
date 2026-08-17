@@ -43,7 +43,7 @@ for required in \
   'BatchMode=yes' 'PreferredAuthentications=publickey' 'PasswordAuthentication=no' \
   'StrictHostKeyChecking=yes' 'ClearAllForwardings=yes' 'ForwardAgent=no' \
   'ForwardX11=no' 'PermitLocalCommand=no' 'ControlPath=none'; do
-  rg -x "$required" "$ssh_log" >/dev/null
+  grep -Fx "$required" "$ssh_log" >/dev/null
 done
 
 if HERMES_KANBAN_SSH_BIN="$fake_ssh" "$repo_dir/bin/hermes-kanban-snapshot" \
