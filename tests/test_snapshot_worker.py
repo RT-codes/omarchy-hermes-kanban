@@ -9,6 +9,7 @@ from pathlib import Path
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +28,7 @@ class SnapshotWorkerTest(unittest.TestCase):
             {
                 "slug": "alpha",
                 "name": "Alpha\u0000 board",
-                "description": "must not cross",
+                "description": "Example board",
                 "is_current": True,
                 "counts": {"running": 1, "done": 2},
                 "db_path": "/must/not/leak",
@@ -44,6 +45,9 @@ class SnapshotWorkerTest(unittest.TestCase):
                 "priority": 2,
                 "created_at": 10,
                 "started_at": 20,
+                "blocked_reason": "waiting",
+                "dependencies": ["t_0"],
+                "tags": ["system"],
                 "workspace_path": "/must/not/leak",
             },
             {"id": "t_done", "title": "Done", "status": "done"},
@@ -78,15 +82,16 @@ class SnapshotWorkerTest(unittest.TestCase):
     def test_snapshot_minimizes_boards_tasks_and_bodies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             hermes, log = self.fake_hermes(Path(tmp))
-            with self.with_log(log):
+            with self.with_log(log), patch.object(WORKER.Path, "home", return_value=Path(tmp)):
                 payload = WORKER.snapshot(hermes, ["alpha"])
             calls = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual(payload["schemaVersion"], 2)
-        self.assertEqual(set(payload["boards"][0]), {"slug", "name", "is_current", "counts"})
+        self.assertEqual(payload["schemaVersion"], 3)
+        self.assertEqual(set(payload["boards"][0]), {"slug", "name", "description", "is_current", "counts"})
         self.assertNotIn("\x00", payload["boards"][0]["name"])
         self.assertEqual([task["id"] for task in payload["tasksByBoard"]["alpha"]], ["t_1"])
         self.assertEqual(payload["tasksByBoard"]["alpha"][0]["body"], "")
         self.assertNotIn("workspace_path", payload["tasksByBoard"]["alpha"][0])
+        self.assertEqual(payload["cronJobs"], [])
         self.assertEqual(calls, [
             ["kanban", "boards", "list", "--json"],
             ["kanban", "--board", "alpha", "list", "--json"],
@@ -94,20 +99,47 @@ class SnapshotWorkerTest(unittest.TestCase):
 
     def test_bodies_are_explicit_and_bounded(self) -> None:
         task = WORKER.sanitize_task(
-            {"id": "x", "title": "X", "body": "a" * 3000, "status": "blocked"}, True
+            {"id": "x", "title": "X", "body": "a" * 5000, "status": "blocked"}, True
         )
-        self.assertEqual(len(task["body"]), 2000)
+        self.assertEqual(len(task["body"]), 4000)
         self.assertIsNone(WORKER.sanitize_task({"id": "x", "status": "done"}, True))
+
+    def test_cron_jobs_are_sanitized_from_jobs_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            cron_dir = home / ".hermes" / "cron"
+            cron_dir.mkdir(parents=True)
+            (cron_dir / "jobs.json").write_text(json.dumps([
+                {
+                    "id": "job_1",
+                    "name": "Hardware watch",
+                    "prompt": "Check second-hand listings",
+                    "schedule": {"kind": "interval", "display": "every 2h"},
+                    "skills": ["hardware-watch"],
+                    "state": "scheduled",
+                    "enabled": True,
+                    "next_run_at": "2026-09-07T23:00:00Z",
+                    "last_status": "ok",
+                    "private_field": "must not leak",
+                }
+            ]), encoding="utf-8")
+            with patch.object(WORKER.Path, "home", return_value=home):
+                jobs = WORKER.load_cron_jobs()
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["name"], "Hardware watch")
+        self.assertEqual(jobs[0]["schedule"], "every 2h")
+        self.assertEqual(jobs[0]["skills"], ["hardware-watch"])
+        self.assertNotIn("private_field", jobs[0])
 
     def test_invalid_json_and_unknown_board_are_safe_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             hermes, log = self.fake_hermes(Path(tmp), invalid=True)
-            with self.with_log(log):
+            with self.with_log(log), patch.object(WORKER.Path, "home", return_value=Path(tmp)):
                 with self.assertRaisesRegex(WORKER.SnapshotError, "invalid JSON"):
                     WORKER.snapshot(hermes, [])
         with tempfile.TemporaryDirectory() as tmp:
             hermes, log = self.fake_hermes(Path(tmp))
-            with self.with_log(log):
+            with self.with_log(log), patch.object(WORKER.Path, "home", return_value=Path(tmp)):
                 with self.assertRaisesRegex(WORKER.SnapshotError, "unavailable"):
                     WORKER.snapshot(hermes, ["missing"])
 
@@ -128,27 +160,26 @@ class SnapshotWorkerTest(unittest.TestCase):
     def test_command_output_limit_is_enforced(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             command = Path(tmp) / "large"
-            command.write_text(
-                "#!/usr/bin/env python3\nprint('x' * 4096)\n",
-                encoding="utf-8",
-            )
+            command.write_text("#!/usr/bin/env python3\nprint('x' * 4096)\n", encoding="utf-8")
             command.chmod(command.stat().st_mode | stat.S_IXUSR)
             with self.assertRaisesRegex(WORKER.SnapshotError, "too much data"):
                 WORKER.run_capped([str(command)], max_output=1024)
 
     def test_untrusted_snapshot_is_re_sanitized(self) -> None:
         payload = WORKER.sanitize_payload({
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "fetchedAt": 1,
             "boards": [{"slug": "alpha", "name": "Alpha", "db_path": "/leak"}],
             "tasksByBoard": {"alpha": [
                 {"id": "x", "title": "X", "body": "secret", "status": "running", "path": "/leak"},
                 {"id": "y", "title": "Y", "status": "done"},
             ]},
+            "cronJobs": [{"id": "job", "name": "Job", "prompt": "hello", "secret": "no"}],
         }, ["alpha"], False)
-        self.assertEqual(set(payload["boards"][0]), {"slug", "name", "is_current", "counts"})
+        self.assertEqual(set(payload["boards"][0]), {"slug", "name", "description", "is_current", "counts"})
         self.assertEqual(payload["tasksByBoard"]["alpha"][0]["body"], "")
         self.assertEqual(len(payload["tasksByBoard"]["alpha"]), 1)
+        self.assertNotIn("secret", payload["cronJobs"][0])
 
 
 if __name__ == "__main__":
