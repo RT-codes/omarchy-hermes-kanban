@@ -59,7 +59,35 @@ function normalizeTask(raw) {
     status: status,
     priority: numberValue(source.priority, 0),
     createdAt: numberValue(source.created_at, 0),
-    startedAt: numberValue(source.started_at, 0)
+    startedAt: numberValue(source.started_at, 0),
+    blockedReason: stringValue(source.blocked_reason),
+    result: stringValue(source.result),
+    dependencies: arrayFrom(source.dependencies),
+    tags: arrayFrom(source.tags)
+  }
+}
+
+function normalizeCronJob(raw) {
+  var source = raw && typeof raw === "object" ? raw : {}
+  return {
+    id: stringValue(source.id),
+    name: stringValue(source.name, stringValue(source.id, "Scheduled job")),
+    prompt: stringValue(source.prompt),
+    schedule: stringValue(source.schedule),
+    state: stringValue(source.state, source.enabled === false ? "paused" : "scheduled"),
+    enabled: source.enabled !== false,
+    nextRunAt: stringValue(source.next_run_at),
+    lastRunAt: stringValue(source.last_run_at),
+    lastStatus: stringValue(source.last_status),
+    lastError: stringValue(source.last_error),
+    deliver: stringValue(source.deliver),
+    skills: arrayFrom(source.skills),
+    workdir: stringValue(source.workdir),
+    model: stringValue(source.model),
+    provider: stringValue(source.provider),
+    script: stringValue(source.script),
+    repeatTimes: source.repeat_times === null || source.repeat_times === undefined ? -1 : numberValue(source.repeat_times, -1),
+    repeatCompleted: numberValue(source.repeat_completed, 0)
   }
 }
 
@@ -70,8 +98,8 @@ function parseSnapshot(raw) {
   } catch (e) {
     return { ok: false, error: "Hermes returned invalid JSON" }
   }
-  if (!parsed || typeof parsed !== "object" || parsed.schemaVersion !== 2)
-    return { ok: false, error: "Unsupported Hermes Kanban snapshot" }
+  if (!parsed || typeof parsed !== "object" || parsed.schemaVersion !== 3)
+    return { ok: false, error: "Unsupported Hermes work snapshot" }
 
   var boards = []
   var rawBoards = arrayFrom(parsed.boards)
@@ -93,20 +121,34 @@ function parseSnapshot(raw) {
     tasksByBoard[String(slug)] = tasks
   }
 
+  var cronJobs = []
+  var rawCron = arrayFrom(parsed.cronJobs)
+  for (var k = 0; k < rawCron.length; k++) {
+    var cronJob = normalizeCronJob(rawCron[k])
+    if (cronJob.id !== "") cronJobs.push(cronJob)
+  }
+  cronJobs.sort(function(a, b) {
+    var aActive = a.state === "scheduled" || a.state === "running"
+    var bActive = b.state === "scheduled" || b.state === "running"
+    if (aActive !== bActive) return aActive ? -1 : 1
+    if (a.nextRunAt !== b.nextRunAt) return a.nextRunAt.localeCompare(b.nextRunAt)
+    return a.name.localeCompare(b.name)
+  })
+
   return {
     ok: true,
     data: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       fetchedAt: numberValue(parsed.fetchedAt, 0),
       boards: boards,
-      tasksByBoard: tasksByBoard
+      tasksByBoard: tasksByBoard,
+      cronJobs: cronJobs
     }
   }
 }
 
 function parseState(raw) {
-  if (!raw || String(raw).trim() === "")
-    return { profiles: {} }
+  if (!raw || String(raw).trim() === "") return { profiles: {} }
   try {
     var parsed = JSON.parse(String(raw))
     if (!parsed || typeof parsed !== "object") return { profiles: {} }
@@ -149,10 +191,7 @@ function normalizedSelection(values) {
 }
 
 function stateJson(profiles) {
-  return JSON.stringify({
-    version: 2,
-    profiles: profiles && typeof profiles === "object" ? profiles : {}
-  }, null, 2) + "\n"
+  return JSON.stringify({ version: 2, profiles: profiles && typeof profiles === "object" ? profiles : {} }, null, 2) + "\n"
 }
 
 function currentBoardSlug(snapshot) {
@@ -180,6 +219,10 @@ function boardOptions(snapshot) {
 function tasksFor(snapshot, slug) {
   if (!snapshot || !snapshot.tasksByBoard) return []
   return arrayFrom(snapshot.tasksByBoard[String(slug)])
+}
+
+function cronJobs(snapshot) {
+  return snapshot ? arrayFrom(snapshot.cronJobs) : []
 }
 
 function countsForTasks(tasks) {
@@ -255,45 +298,71 @@ function detailTaskCount(tasks) {
 }
 
 function statusLabel(status) {
-  var labels = {
-    triage: "Triage",
-    todo: "Todo",
-    scheduled: "Scheduled",
-    ready: "Ready",
-    running: "Running",
-    blocked: "Blocked",
-    review: "Review",
-    done: "Done"
-  }
+  var labels = { triage: "Triage", todo: "Todo", scheduled: "Scheduled", ready: "Ready", running: "Running", blocked: "Blocked", review: "Review", done: "Done" }
   return labels[status] || status
 }
 
 function statusIcon(status) {
-  var icons = {
-    triage: "inbox",
-    todo: "list-check",
-    scheduled: "calendar-time",
-    ready: "player-play",
-    running: "loader-2",
-    blocked: "alert-octagon",
-    review: "eye-check",
-    done: "circle-check"
-  }
+  var icons = { triage: "inbox", todo: "list-check", scheduled: "calendar-time", ready: "player-play", running: "loader-2", blocked: "alert-octagon", review: "eye-check", done: "circle-check" }
   return icons[status] || "list-check"
+}
+
+function statusGlyph(status) {
+  var glyphs = { triage: "◇", todo: "○", scheduled: "◷", ready: "▷", running: "●", blocked: "!", review: "◉", done: "✓" }
+  return glyphs[status] || "·"
+}
+
+function cronGlyph(job) {
+  if (!job) return "◷"
+  if (job.state === "running") return "●"
+  if (job.state === "paused") return "Ⅱ"
+  if (job.state === "completed") return "✓"
+  if (job.lastStatus === "error" || job.lastStatus === "delivery_failed" || job.lastStatus === "blocked_config") return "!"
+  return "◷"
+}
+
+function cronStateLabel(job) {
+  if (!job) return ""
+  if (job.state === "running") return "running"
+  if (job.state === "paused") return "paused"
+  if (job.state === "completed") return "completed"
+  return job.enabled ? "scheduled" : "paused"
+}
+
+function cronMeta(job) {
+  if (!job) return ""
+  var parts = []
+  if (job.schedule) parts.push(job.schedule)
+  if (job.nextRunAt && cronStateLabel(job) === "scheduled") parts.push("next " + friendlyDateTime(job.nextRunAt))
+  else if (job.lastRunAt) parts.push("last " + friendlyDateTime(job.lastRunAt))
+  return parts.join(" · ")
+}
+
+function taskMeta(task) {
+  if (!task) return ""
+  var parts = []
+  if (task.priority) parts.push("priority " + task.priority)
+  if (task.assignee) parts.push(task.assignee)
+  if (task.tags && task.tags.length) parts.push(task.tags.join(", "))
+  return parts.join(" · ")
+}
+
+function friendlyDateTime(value) {
+  var text = stringValue(value)
+  if (!text) return ""
+  var date = new Date(text)
+  if (isNaN(date.getTime())) return text
+  return Qt.formatDateTime(date, "ddd HH:mm")
 }
 
 function colorChannelLuminance(value) {
   var channel = Number(value)
   if (!isFinite(channel)) return 0
-  return channel <= 0.04045
-    ? channel / 12.92
-    : Math.pow((channel + 0.055) / 1.055, 2.4)
+  return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4)
 }
 
 function colorLuminance(color) {
-  return 0.2126 * colorChannelLuminance(color.r)
-    + 0.7152 * colorChannelLuminance(color.g)
-    + 0.0722 * colorChannelLuminance(color.b)
+  return 0.2126 * colorChannelLuminance(color.r) + 0.7152 * colorChannelLuminance(color.g) + 0.0722 * colorChannelLuminance(color.b)
 }
 
 function contrastRatio(first, second) {
@@ -306,20 +375,6 @@ function contrastRatio(first, second) {
 
 function higherContrastColor(first, second, background) {
   return contrastRatio(first, background) >= contrastRatio(second, background) ? first : second
-}
-
-function statusGlyph(status) {
-  var glyphs = {
-    triage: "◇",
-    todo: "○",
-    scheduled: "◷",
-    ready: "▷",
-    running: "●",
-    blocked: "!",
-    review: "◉",
-    done: "✓"
-  }
-  return glyphs[status] || "·"
 }
 
 function elapsed(startedAt, nowSeconds) {
