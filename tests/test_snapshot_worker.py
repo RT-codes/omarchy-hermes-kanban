@@ -126,10 +126,32 @@ class SnapshotWorkerTest(unittest.TestCase):
             with patch.object(WORKER.Path, "home", return_value=home):
                 jobs = WORKER.load_cron_jobs()
         self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["profile"], "default")
         self.assertEqual(jobs[0]["name"], "Hardware watch")
         self.assertEqual(jobs[0]["schedule"], "every 2h")
         self.assertEqual(jobs[0]["skills"], ["hardware-watch"])
         self.assertNotIn("private_field", jobs[0])
+
+    def test_cron_jobs_are_discovered_across_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            manager_dir = home / ".hermes" / "profiles" / "manager" / "cron"
+            manager_dir.mkdir(parents=True)
+            (manager_dir / "jobs.json").write_text(json.dumps({"jobs": [
+                {
+                    "id": "job_manager",
+                    "name": "Hardware Deal Watch",
+                    "schedule": {"kind": "cron", "display": "*/30 * * * *"},
+                    "state": "scheduled",
+                    "enabled": True,
+                }
+            ]}), encoding="utf-8")
+            with patch.object(WORKER.Path, "home", return_value=home):
+                jobs = WORKER.load_cron_jobs()
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["profile"], "manager")
+        self.assertEqual(jobs[0]["name"], "Hardware Deal Watch")
+        self.assertEqual(jobs[0]["state"], "scheduled")
 
     def test_invalid_json_and_unknown_board_are_safe_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -174,11 +196,12 @@ class SnapshotWorkerTest(unittest.TestCase):
                 {"id": "x", "title": "X", "body": "secret", "status": "running", "path": "/leak"},
                 {"id": "y", "title": "Y", "status": "done"},
             ]},
-            "cronJobs": [{"id": "job", "name": "Job", "prompt": "hello", "secret": "no"}],
+            "cronJobs": [{"id": "job", "profile": "manager", "name": "Job", "prompt": "hello", "secret": "no"}],
         }, ["alpha"], False)
         self.assertEqual(set(payload["boards"][0]), {"slug", "name", "description", "is_current", "counts"})
         self.assertEqual(payload["tasksByBoard"]["alpha"][0]["body"], "")
         self.assertEqual(len(payload["tasksByBoard"]["alpha"]), 1)
+        self.assertEqual(payload["cronJobs"][0]["profile"], "manager")
         self.assertNotIn("secret", payload["cronJobs"][0])
 
 
