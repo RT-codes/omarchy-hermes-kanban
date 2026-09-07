@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.davidojedalopez.hermes-kanban",
   "name": "Hermes Kanban",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "David Ojeda",
   "license": "MIT",
-  "description": "Read-only Hermes work view for Kanban tasks and scheduled jobs.",
+  "description": "Hermes work console for Kanban tasks and scheduled jobs, with bounded local Obsidian/Nvim work-note editing.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Hermes Work",
-    "description": "Monitor selected Hermes Kanban boards plus scheduled cron jobs.",
+    "description": "Monitor Hermes Kanban and cron work; open managed local work notes in Obsidian or floating Nvim.",
     "category": "Status",
     "allowMultiple": false,
     "defaultSection": "right",
