@@ -29,6 +29,7 @@ Panel {
   readonly property color reviewColor: "#fbbf24"
   readonly property color readyColor: "#60a5fa"
   readonly property string fontFamily: bar && bar.fontFamily ? bar.fontFamily : "monospace"
+  readonly property string workNoteHelper: String(Qt.resolvedUrl("bin/hermes-work-note.py")).replace(/^file:\/\//, "")
 
   readonly property var store: Plugin.SnapshotStore
   readonly property string connectionMode: store.connectionMode
@@ -87,6 +88,11 @@ Panel {
 
   function openHermes() {
     Quickshell.execDetached(["gtk-launch", "hermes"])
+  }
+
+  function openWorkNote(action, kind, scope, itemId) {
+    if (connectionMode !== "local" || !itemId) return
+    Quickshell.execDetached(["python3", workNoteHelper, action, kind, String(scope), String(itemId)])
   }
 
   function copyTaskId(taskId) {
@@ -398,7 +404,12 @@ Panel {
 
                   Repeater {
                     model: statusGroup.statusTasks
-                    delegate: TaskRow { required property var modelData; width: parent.width; task: modelData }
+                    delegate: TaskRow {
+                      required property var modelData
+                      width: parent.width
+                      task: modelData
+                      boardSlug: boardSection.modelData.slug
+                    }
                   }
                 }
               }
@@ -416,7 +427,7 @@ Panel {
               fontFamily: root.fontFamily
             }
             Text {
-              text: "read only"
+              text: root.connectionMode === "local" ? "editable notes" : "read only"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -445,6 +456,7 @@ Panel {
   component TaskRow: CursorSurface {
     id: taskRow
     property var task: null
+    property string boardSlug: ""
     property bool expanded: false
     foreground: root.foreground
     implicitHeight: taskContent.implicitHeight + Style.space(12)
@@ -577,6 +589,28 @@ Panel {
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
+        }
+
+        Button {
+          visible: root.connectionMode === "local"
+          text: "Obsidian"
+          iconText: "󱓧"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          horizontalPadding: Style.space(6)
+          verticalPadding: Style.space(3)
+          onClicked: root.openWorkNote("obsidian", "task", taskRow.boardSlug, taskRow.task.id)
+        }
+
+        Button {
+          visible: root.connectionMode === "local"
+          text: "Nvim"
+          iconText: "󰨞"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          horizontalPadding: Style.space(6)
+          verticalPadding: Style.space(3)
+          onClicked: root.openWorkNote("nvim", "task", taskRow.boardSlug, taskRow.task.id)
         }
 
         Button {
@@ -746,6 +780,28 @@ Panel {
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
+        }
+
+        Button {
+          visible: root.connectionMode === "local"
+          text: "Obsidian"
+          iconText: "󱓧"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          horizontalPadding: Style.space(6)
+          verticalPadding: Style.space(3)
+          onClicked: root.openWorkNote("obsidian", "cron", "auto", cronRow.job.id)
+        }
+
+        Button {
+          visible: root.connectionMode === "local"
+          text: "Nvim"
+          iconText: "󰨞"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          horizontalPadding: Style.space(6)
+          verticalPadding: Style.space(3)
+          onClicked: root.openWorkNote("nvim", "cron", "auto", cronRow.job.id)
         }
 
         Button {
