@@ -224,6 +224,7 @@ def sanitize_cron_job(value: Any) -> dict[str, Any] | None:
     repeat = value.get("repeat") if isinstance(value.get("repeat"), dict) else {}
     return {
         "id": job_id,
+        "profile": clean_text(value.get("profile") or "default", 80),
         "name": clean_text(value.get("name") or job_id, 200),
         "prompt": clean_text(value.get("prompt"), 6000),
         "schedule": schedule_display(value.get("schedule")),
@@ -244,25 +245,42 @@ def sanitize_cron_job(value: Any) -> dict[str, Any] | None:
     }
 
 
+def cron_stores() -> list[tuple[str, Path]]:
+    root = Path.home() / ".hermes"
+    stores: list[tuple[str, Path]] = [("default", root / "cron" / "jobs.json")]
+    profiles_dir = root / "profiles"
+    if profiles_dir.is_dir():
+        for profile_dir in sorted(profiles_dir.iterdir(), key=lambda path: path.name):
+            if profile_dir.is_dir():
+                stores.append((clean_text(profile_dir.name, 80), profile_dir / "cron" / "jobs.json"))
+    return stores
+
+
 def load_cron_jobs() -> list[dict[str, Any]]:
-    path = Path.home() / ".hermes" / "cron" / "jobs.json"
-    if not path.is_file():
-        return []
-    try:
-        if path.stat().st_size > MAX_COMMAND_OUTPUT:
-            raise SnapshotError("response-too-large", "Hermes cron file is too large")
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise SnapshotError("cron-invalid", "Hermes cron jobs could not be read") from exc
-    if isinstance(raw, dict):
-        raw = raw.get("jobs", [])
-    if not isinstance(raw, list):
-        raise SnapshotError("cron-invalid", "Hermes cron jobs have an invalid shape")
     jobs: list[dict[str, Any]] = []
-    for raw_job in raw[:MAX_CRON_JOBS]:
-        job = sanitize_cron_job(raw_job)
-        if job is not None:
-            jobs.append(job)
+    for profile, path in cron_stores():
+        if not path.is_file():
+            continue
+        try:
+            if path.stat().st_size > MAX_COMMAND_OUTPUT:
+                raise SnapshotError("response-too-large", "Hermes cron file is too large")
+            raw = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise SnapshotError("cron-invalid", f"Hermes cron jobs for profile {profile} could not be read") from exc
+        if isinstance(raw, dict):
+            raw = raw.get("jobs", [])
+        if not isinstance(raw, list):
+            raise SnapshotError("cron-invalid", f"Hermes cron jobs for profile {profile} have an invalid shape")
+        for raw_job in raw:
+            if len(jobs) >= MAX_CRON_JOBS:
+                return jobs
+            if not isinstance(raw_job, dict):
+                continue
+            profiled_job = dict(raw_job)
+            profiled_job["profile"] = profile
+            job = sanitize_cron_job(profiled_job)
+            if job is not None:
+                jobs.append(job)
     return jobs
 
 
