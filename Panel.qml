@@ -42,16 +42,17 @@ Panel {
 
   readonly property var aggregate: Model.aggregate(snapshot, selectedSlugs)
   readonly property var selectedBoards: Model.selectedBoardModels(snapshot, selectedSlugs)
+  readonly property var cronJobs: Model.cronJobs(snapshot)
   readonly property color barIconColor: lastError !== "" && !snapshot ? urgent
     : aggregate.blocked > 0 ? blockedColor
     : aggregate.review > 0 ? reviewColor
     : aggregate.running > 0 ? runningColor
     : dim
   readonly property string tooltipText: lastError !== ""
-    ? "Hermes Kanban · " + lastError
+    ? "Hermes Work · " + lastError
     : aggregate.selected === 0
-      ? "Hermes Kanban · choose boards"
-      : "Hermes Kanban · " + aggregate.running + " running, " + aggregate.blocked + " blocked"
+      ? "Hermes Work · choose boards"
+      : "Hermes Work · " + aggregate.running + " running, " + aggregate.blocked + " blocked · " + cronJobs.length + " scheduled jobs"
 
   function configureStore() {
     store.configure(
@@ -73,13 +74,16 @@ Panel {
     return foreground
   }
 
-  function refresh() {
-    store.refresh()
+  function cronColor(job) {
+    if (!job) return dim
+    if (job.lastStatus === "error" || job.lastStatus === "delivery_failed" || job.lastStatus === "blocked_config") return urgent
+    if (job.state === "running") return runningColor
+    if (job.state === "paused" || job.state === "completed") return dim
+    return readyColor
   }
 
-  function applyBoardSelection(values) {
-    store.applyBoardSelection(values)
-  }
+  function refresh() { store.refresh() }
+  function applyBoardSelection(values) { store.applyBoardSelection(values) }
 
   function openHermes() {
     Quickshell.execDetached(["gtk-launch", "hermes"])
@@ -90,11 +94,14 @@ Panel {
     Quickshell.execDetached(["wl-copy", String(taskId)])
   }
 
+  function copyCronId(jobId) {
+    if (!jobId) return
+    Quickshell.execDetached(["wl-copy", String(jobId)])
+  }
+
   onOpenedChanged: {
     store.setPanelOpen(opened)
-    if (opened) {
-      Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-    }
+    if (opened) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   onSettingsChanged: configureStore()
@@ -127,7 +134,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(460))
-    contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(650))
+    contentHeight: panel.fittedContentHeight(contentColumn.implicitHeight, Style.space(720))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -157,16 +164,16 @@ Panel {
 
           PanelHero {
             width: parent.width
-            title: "Hermes Kanban"
-            meta: root.refreshing ? "Refreshing " + root.connectionMode + " boards…"
+            title: "Hermes Work"
+            meta: root.refreshing ? "Refreshing " + root.connectionMode + " work…"
               : root.snapshot ? Model.ageLabel(root.snapshot.fetchedAt, root.nowSeconds)
               : "Waiting for the first snapshot"
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconComponent: Component {
-            Text {
-              text: "▦"
-              textFormat: Text.PlainText
+              Text {
+                text: "▦"
+                textFormat: Text.PlainText
                 color: root.barIconColor
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
@@ -222,6 +229,13 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
+          PanelSectionHeader {
+            width: parent.width
+            text: "TASKS"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
           MultiSelect {
             width: parent.width
             label: "BOARDS"
@@ -257,10 +271,7 @@ Panel {
               width: contentColumn.width
               spacing: Style.space(8)
 
-              PanelSeparator {
-                width: parent.width
-                foreground: root.foreground
-              }
+              PanelSeparator { width: parent.width; foreground: root.foreground }
 
               RowLayout {
                 width: parent.width
@@ -318,9 +329,7 @@ Panel {
                     Layout.fillWidth: true
                     implicitHeight: funnelColumn.implicitHeight + Style.space(8)
                     radius: Style.cornerRadius
-                    color: blockedActive
-                      ? Util.alpha(root.blockedColor, 0.15)
-                      : Style.normalFillFor(root.foreground, Color.accent)
+                    color: blockedActive ? Util.alpha(root.blockedColor, 0.15) : Style.normalFillFor(root.foreground, Color.accent)
                     border.width: blockedActive ? 1 : 0
                     border.color: blockedActive ? Util.alpha(root.blockedColor, 0.72) : "transparent"
                     Accessible.name: Model.statusLabel(modelData) + ": " + statusCount
@@ -329,9 +338,7 @@ Panel {
                     ToolTip.delay: 400
                     ToolTip.text: Accessible.name
 
-                    HoverHandler {
-                      id: statusHover
-                    }
+                    HoverHandler { id: statusHover }
 
                     Column {
                       id: funnelColumn
@@ -391,16 +398,44 @@ Panel {
 
                   Repeater {
                     model: statusGroup.statusTasks
-
-                    delegate: TaskRow {
-                      required property var modelData
-                      width: parent.width
-                      task: modelData
-                    }
+                    delegate: TaskRow { required property var modelData; width: parent.width; task: modelData }
                   }
                 }
               }
             }
+          }
+
+          PanelSeparator { width: parent.width; foreground: root.foreground }
+
+          RowLayout {
+            width: parent.width
+            PanelSectionHeader {
+              Layout.fillWidth: true
+              text: "SCHEDULED  " + root.cronJobs.length
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+            Text {
+              text: "read only"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+          }
+
+          Text {
+            visible: root.snapshot && root.cronJobs.length === 0
+            width: parent.width
+            text: "No Hermes cron jobs found."
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            horizontalAlignment: Text.AlignHCenter
+          }
+
+          Repeater {
+            model: root.cronJobs
+            delegate: CronRow { required property var modelData; width: parent.width; job: modelData }
           }
         }
       }
@@ -438,7 +473,7 @@ Panel {
       anchors.verticalCenter: parent.verticalCenter
       anchors.leftMargin: Style.space(9)
       anchors.rightMargin: Style.space(9)
-      spacing: Style.space(3)
+      spacing: Style.space(4)
 
       RowLayout {
         Layout.fillWidth: true
@@ -462,9 +497,7 @@ Panel {
         }
 
         Text {
-          text: taskRow.task.status === "running"
-            ? Model.elapsed(taskRow.task.startedAt, root.nowSeconds)
-            : (taskRow.task.assignee || "unassigned")
+          text: taskRow.task.status === "running" ? Model.elapsed(taskRow.task.startedAt, root.nowSeconds) : (taskRow.task.assignee || "unassigned")
           textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
@@ -473,16 +506,62 @@ Panel {
       }
 
       Text {
+        visible: taskRow.expanded && Model.taskMeta(taskRow.task) !== ""
+        Layout.fillWidth: true
+        text: Model.taskMeta(taskRow.task)
+        textFormat: Text.PlainText
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
+
+      Text {
         visible: taskRow.expanded && taskRow.task.body !== ""
         Layout.fillWidth: true
         text: taskRow.task.body
+        textFormat: Text.PlainText
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        wrapMode: Text.WordWrap
+        maximumLineCount: 12
+        elide: Text.ElideRight
+      }
+
+      Text {
+        visible: taskRow.expanded && taskRow.task.blockedReason !== ""
+        Layout.fillWidth: true
+        text: "Blocked: " + taskRow.task.blockedReason
+        textFormat: Text.PlainText
+        color: root.blockedColor
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        wrapMode: Text.WordWrap
+      }
+
+      Text {
+        visible: taskRow.expanded && taskRow.task.result !== ""
+        Layout.fillWidth: true
+        text: "Result: " + taskRow.task.result
         textFormat: Text.PlainText
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         wrapMode: Text.WordWrap
-        maximumLineCount: 6
+        maximumLineCount: 8
         elide: Text.ElideRight
+      }
+
+      Text {
+        visible: taskRow.expanded && taskRow.task.dependencies && taskRow.task.dependencies.length > 0
+        Layout.fillWidth: true
+        text: "Depends on: " + taskRow.task.dependencies.join(", ")
+        textFormat: Text.PlainText
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
       }
 
       RowLayout {
@@ -492,7 +571,7 @@ Panel {
 
         Text {
           Layout.fillWidth: true
-          text: taskRow.task.id + (taskRow.task.assignee ? " · " + taskRow.task.assignee : "")
+          text: taskRow.task.id
           textFormat: Text.PlainText
           color: root.dim
           font.family: root.fontFamily
@@ -508,6 +587,175 @@ Panel {
           horizontalPadding: Style.space(6)
           verticalPadding: Style.space(3)
           onClicked: root.copyTaskId(taskRow.task.id)
+        }
+      }
+    }
+  }
+
+  component CronRow: CursorSurface {
+    id: cronRow
+    property var job: null
+    property bool expanded: false
+    foreground: root.foreground
+    implicitHeight: cronContent.implicitHeight + Style.space(12)
+
+    Rectangle {
+      visible: cronRow.job && (cronRow.job.lastStatus === "error" || cronRow.job.lastStatus === "delivery_failed" || cronRow.job.lastStatus === "blocked_config")
+      anchors.left: parent.left
+      anchors.top: parent.top
+      anchors.bottom: parent.bottom
+      width: 3
+      radius: width / 2
+      color: root.urgent
+    }
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: cronRow.expanded = !cronRow.expanded
+    }
+
+    ColumnLayout {
+      id: cronContent
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(9)
+      anchors.rightMargin: Style.space(9)
+      spacing: Style.space(4)
+
+      RowLayout {
+        Layout.fillWidth: true
+        spacing: Style.space(7)
+
+        Text {
+          text: Model.cronGlyph(cronRow.job)
+          color: root.cronColor(cronRow.job)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+        }
+
+        Text {
+          Layout.fillWidth: true
+          text: cronRow.job.name
+          textFormat: Text.PlainText
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+
+        Text {
+          text: Model.cronStateLabel(cronRow.job)
+          textFormat: Text.PlainText
+          color: root.cronColor(cronRow.job)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Text {
+        Layout.fillWidth: true
+        text: Model.cronMeta(cronRow.job)
+        textFormat: Text.PlainText
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+      }
+
+      Text {
+        visible: cronRow.expanded && cronRow.job.prompt !== ""
+        Layout.fillWidth: true
+        text: cronRow.job.prompt
+        textFormat: Text.PlainText
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        wrapMode: Text.WordWrap
+        maximumLineCount: 14
+        elide: Text.ElideRight
+      }
+
+      Text {
+        visible: cronRow.expanded && cronRow.job.skills && cronRow.job.skills.length > 0
+        Layout.fillWidth: true
+        text: "Skills: " + cronRow.job.skills.join(", ")
+        textFormat: Text.PlainText
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+      }
+
+      Text {
+        visible: cronRow.expanded && cronRow.job.workdir !== ""
+        Layout.fillWidth: true
+        text: "Workdir: " + cronRow.job.workdir
+        textFormat: Text.PlainText
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideMiddle
+      }
+
+      Text {
+        visible: cronRow.expanded && cronRow.job.deliver !== ""
+        Layout.fillWidth: true
+        text: "Delivery: " + cronRow.job.deliver
+        textFormat: Text.PlainText
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        visible: cronRow.expanded && cronRow.job.lastStatus !== ""
+        Layout.fillWidth: true
+        text: "Last run: " + cronRow.job.lastStatus + (cronRow.job.lastRunAt ? " · " + Model.friendlyDateTime(cronRow.job.lastRunAt) : "")
+        textFormat: Text.PlainText
+        color: cronRow.job.lastStatus === "ok" ? root.runningColor : root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        visible: cronRow.expanded && cronRow.job.lastError !== ""
+        Layout.fillWidth: true
+        text: cronRow.job.lastError
+        textFormat: Text.PlainText
+        color: root.urgent
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        wrapMode: Text.WordWrap
+        maximumLineCount: 6
+        elide: Text.ElideRight
+      }
+
+      RowLayout {
+        visible: cronRow.expanded
+        Layout.fillWidth: true
+        spacing: Style.space(6)
+
+        Text {
+          Layout.fillWidth: true
+          text: cronRow.job.id
+          textFormat: Text.PlainText
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+
+        Button {
+          text: "Copy ID"
+          iconText: "󰆏"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          horizontalPadding: Style.space(6)
+          verticalPadding: Style.space(3)
+          onClicked: root.copyCronId(cronRow.job.id)
         }
       }
     }
