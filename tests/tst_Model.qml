@@ -7,7 +7,7 @@ TestCase {
 
   function fixture() {
     return JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       fetchedAt: 1000,
       boards: [
         { slug: "alpha", name: "Alpha", is_current: true, counts: { running: 1, blocked: 1, done: 2 } },
@@ -15,11 +15,23 @@ TestCase {
       ],
       tasksByBoard: {
         alpha: [
-          { id: "t_run", title: "Run", status: "running", priority: 1, started_at: 900 },
-          { id: "t_block", title: "Block", status: "blocked", priority: 3 }
+          { id: "t_run", title: "Run", status: "running", priority: 1, started_at: 900, tags: ["system"] },
+          { id: "t_block", title: "Block", status: "blocked", priority: 3, blocked_reason: "needs input", dependencies: ["t_plan"] }
         ],
         beta: [{ id: "t_review", title: "Review", status: "review", priority: 2 }]
-      }
+      },
+      cronJobs: [
+        {
+          id: "job_1",
+          name: "Hardware watch",
+          prompt: "Check listings",
+          schedule: "every 2h",
+          state: "scheduled",
+          enabled: true,
+          next_run_at: "2026-09-07T23:00:00Z",
+          skills: ["hardware-watch"]
+        }
+      ]
     })
   }
 
@@ -32,6 +44,8 @@ TestCase {
     compare(aggregate.blocked, 1)
     compare(aggregate.review, 1)
     compare(aggregate.attention, 2)
+    compare(Model.cronJobs(parsed.data).length, 1)
+    compare(Model.cronJobs(parsed.data)[0].name, "Hardware watch")
   }
 
   function test_invalid_snapshot() {
@@ -68,6 +82,21 @@ TestCase {
     var sorted = Model.tasksForStatus(tasks, "ready")
     compare(sorted[0].id, "b")
     compare(Model.elapsed(900, 1000), "1m")
+  }
+
+  function test_richer_task_metadata() {
+    var parsed = Model.parseSnapshot(fixture()).data
+    var blocked = Model.tasksForStatus(Model.tasksFor(parsed, "alpha"), "blocked")[0]
+    compare(blocked.blockedReason, "needs input")
+    compare(blocked.dependencies[0], "t_plan")
+  }
+
+  function test_cron_helpers() {
+    var parsed = Model.parseSnapshot(fixture()).data
+    var job = Model.cronJobs(parsed)[0]
+    compare(Model.cronStateLabel(job), "scheduled")
+    compare(Model.cronGlyph(job), "◷")
+    verify(Model.cronMeta(job).indexOf("every 2h") >= 0)
   }
 
   function test_board_metadata_counts_are_not_replaced_by_filtered_tasks() {
