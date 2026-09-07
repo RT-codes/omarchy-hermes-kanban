@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+
+- Expand the panel from Kanban-only monitoring into a read-only Hermes Work view.
+- Add a Scheduled section backed by Hermes' profile-local cron `jobs.json` store.
+- Show cron name, schedule, state, next/last run, prompt, skills, delivery, workdir, and errors.
+- Keep cron data allowlisted, size-bounded, sanitized, and compatible with the existing local/SSH snapshot transport.
+- Expand task inspection with priority, tags, blocked reason, result summary, and dependencies when Hermes exposes them.
+- Keep task bodies opt-in and preserve the plugin's read-only safety model.
+
 ## 1.1.2
 
 - Give Blocked a dedicated red palette instead of inheriting a theme's generic urgent color.
