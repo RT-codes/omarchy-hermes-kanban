@@ -16,8 +16,8 @@ else:
 PY
 chmod +x "$fake_hermes"
 
-local_output=$("$repo_dir/bin/hermes-kanban-snapshot" snapshot --mode local --hermes "$fake_hermes" --board alpha)
-jq -e '.schemaVersion == 2 and .tasksByBoard.alpha[0].body == ""' <<<"$local_output" >/dev/null
+local_output=$(HOME="$tmp_dir" "$repo_dir/bin/hermes-kanban-snapshot" snapshot --mode local --hermes "$fake_hermes" --board alpha)
+jq -e '.schemaVersion == 3 and .tasksByBoard.alpha[0].body == "" and (.cronJobs | type == "array")' <<<"$local_output" >/dev/null
 
 fake_ssh="$tmp_dir/ssh"
 cat > "$fake_ssh" <<'SH'
@@ -28,16 +28,16 @@ case ${FAKE_SSH_MODE:-ok} in
   fail) exit 4 ;;
 esac
 request=${!#}
-python3 - "$request"
+HOME="$FAKE_REMOTE_HOME" python3 - "$request"
 SH
 chmod +x "$fake_ssh"
 
 ssh_log="$tmp_dir/ssh.log"
-remote_output=$(FAKE_HERMES_LOG="$tmp_dir/hermes.log" FAKE_SSH_LOG="$ssh_log" \
+remote_output=$(FAKE_HERMES_LOG="$tmp_dir/hermes.log" FAKE_SSH_LOG="$ssh_log" FAKE_REMOTE_HOME="$tmp_dir" \
   HERMES_KANBAN_SSH_BIN="$fake_ssh" \
   "$repo_dir/bin/hermes-kanban-snapshot" snapshot --mode remote --host safe-alias \
   --hermes "$fake_hermes" --board alpha --include-task-bodies)
-jq -e '.tasksByBoard.alpha[0].body == "secret"' <<<"$remote_output" >/dev/null
+jq -e '.schemaVersion == 3 and .tasksByBoard.alpha[0].body == "secret"' <<<"$remote_output" >/dev/null
 
 for required in \
   'BatchMode=yes' 'PreferredAuthentications=publickey' 'PasswordAuthentication=no' \
@@ -53,7 +53,7 @@ if HERMES_KANBAN_SSH_BIN="$fake_ssh" "$repo_dir/bin/hermes-kanban-snapshot" \
 fi
 
 set +e
-FAKE_SSH_MODE=auth HERMES_KANBAN_SSH_BIN="$fake_ssh" FAKE_SSH_LOG="$ssh_log" \
+FAKE_SSH_MODE=auth HERMES_KANBAN_SSH_BIN="$fake_ssh" FAKE_SSH_LOG="$ssh_log" FAKE_REMOTE_HOME="$tmp_dir" \
   "$repo_dir/bin/hermes-kanban-snapshot" snapshot --mode remote --host safe-alias --hermes hermes >/dev/null 2>&1
 auth_status=$?
 set -e
