@@ -3,8 +3,18 @@ set -euo pipefail
 
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
-python3 -m py_compile "$repo_dir/bin/hermes-kanban-snapshot" "$repo_dir/bin/snapshot_worker.py"
-bash -n "$repo_dir/tests/test_assets.sh" "$repo_dir/tests/test_transport.sh" "$repo_dir/tests/run.sh"
+python3 -m py_compile \
+  "$repo_dir/bin/hermes-kanban-snapshot" \
+  "$repo_dir/bin/snapshot_worker.py" \
+  "$repo_dir/bin/hermes-work-note.py" \
+  "$repo_dir/bin/hermes-work-sync.py"
+
+bash -n \
+  "$repo_dir/bin/hermes-work-watch-install" \
+  "$repo_dir/tests/test_assets.sh" \
+  "$repo_dir/tests/test_transport.sh" \
+  "$repo_dir/tests/run.sh"
+
 python3 "$repo_dir/tests/test_snapshot_worker.py"
 "$repo_dir/tests/test_assets.sh"
 "$repo_dir/tests/test_transport.sh"
