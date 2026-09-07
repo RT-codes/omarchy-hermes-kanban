@@ -34,13 +34,33 @@ def profile_home(profile: str) -> Path:
     root = Path.home() / ".hermes"
     return root if profile == "default" else root / "profiles" / profile
 
-def load_cron(profile: str, job_id: str) -> dict:
-    path = profile_home(profile) / "cron" / "jobs.json"
-    raw = json.loads(path.read_text(encoding="utf-8-sig"))
-    jobs = raw.get("jobs", []) if isinstance(raw, dict) else raw
-    for job in jobs if isinstance(jobs, list) else []:
-        if isinstance(job, dict) and str(job.get("id") or "") == job_id:
-            return job
+def candidate_profiles() -> list[str]:
+    root = Path.home() / ".hermes"
+    out = ["default"]
+    profiles = root / "profiles"
+    if profiles.is_dir():
+        out.extend(sorted(p.name for p in profiles.iterdir() if p.is_dir()))
+    return out
+
+def load_cron(profile: str, job_id: str) -> tuple[str, dict]:
+    matches: list[tuple[str, dict]] = []
+    profiles = candidate_profiles() if profile == "auto" else [profile]
+    for candidate in profiles:
+        path = profile_home(candidate) / "cron" / "jobs.json"
+        if not path.is_file():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        jobs = raw.get("jobs", []) if isinstance(raw, dict) else raw
+        for job in jobs if isinstance(jobs, list) else []:
+            if isinstance(job, dict) and str(job.get("id") or "") == job_id:
+                matches.append((candidate, job))
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise NoteError(f"cron job id {job_id} exists in multiple profiles; profile is required")
     raise NoteError(f"cron job {profile}/{job_id} not found")
 
 def schedule_text(job: dict) -> str:
@@ -52,9 +72,9 @@ def schedule_text(job: dict) -> str:
     return ""
 
 def cron_note(profile: str, job_id: str) -> Path:
-    job = load_cron(profile, job_id)
+    resolved_profile, job = load_cron(profile, job_id)
     name = clean(job.get("name") or job_id, 200).replace("\n", " ")
-    folder = CRON_ROOT / profile
+    folder = CRON_ROOT / resolved_profile
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{safe_name(name)}.md"
     skills = job.get("skills") or job.get("skill") or []
@@ -62,7 +82,7 @@ def cron_note(profile: str, job_id: str) -> Path:
         skills = [skills]
     enabled = job.get("enabled", True) is not False and str(job.get("state") or "") != "paused"
     lines = [
-        "---", "type: hermes-cron", f"profile: {profile}", f"job_id: {job_id}",
+        "---", "type: hermes-cron", f"profile: {resolved_profile}", f"job_id: {job_id}",
         f"name: {name}", f"schedule: {schedule_text(job)}", f"enabled: {'true' if enabled else 'false'}", "skills:",
     ]
     lines.extend(f"  - {clean(x,128)}" for x in skills)
