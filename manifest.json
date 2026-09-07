@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.davidojedalopez.hermes-kanban",
   "name": "Hermes Kanban",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "author": "David Ojeda",
   "license": "MIT",
-  "description": "Read-only progress for selected local or remote Hermes Kanban boards.",
+  "description": "Read-only Hermes work view for Kanban tasks and scheduled jobs.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,8 +13,8 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Hermes Kanban",
-    "description": "Monitor running, blocked, review, and ready Hermes tasks across multiple boards.",
+    "displayName": "Hermes Work",
+    "description": "Monitor selected Hermes Kanban boards plus scheduled cron jobs.",
     "category": "Status",
     "allowMultiple": false,
     "defaultSection": "right",
