@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+user_dir="$HOME/.config/systemd/user"
+mkdir -p "$user_dir"
+
+cat > "$user_dir/hermes-work-sync.service" <<EOF
+[Unit]
+Description=Sync human-managed Hermes Work notes into Hermes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 $repo_dir/bin/hermes-work-sync.py
+EOF
+
+cat > "$user_dir/hermes-work-sync.timer" <<'EOF'
+[Unit]
+Description=Watch Hermes Work notes for changes
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec=5s
+AccuracySec=1s
+Unit=hermes-work-sync.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl --user daemon-reload
+systemctl --user enable --now hermes-work-sync.timer
+
+echo "Hermes Work sync timer enabled."
+echo "Service: hermes-work-sync.service"
+echo "Timer:   hermes-work-sync.timer"
+echo "Vault:   $HOME/Documents/Hermes-Memory/90 Hermes Control"
