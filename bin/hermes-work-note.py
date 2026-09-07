@@ -45,8 +45,10 @@ def load_cron(profile: str, job_id: str) -> dict:
 
 def schedule_text(job: dict) -> str:
     s = job.get("schedule")
-    if isinstance(s, str): return s
-    if isinstance(s, dict): return str(s.get("display") or s.get("expr") or s.get("value") or "")
+    if isinstance(s, str):
+        return s
+    if isinstance(s, dict):
+        return str(s.get("display") or s.get("expr") or s.get("value") or "")
     return ""
 
 def cron_note(profile: str, job_id: str) -> Path:
@@ -56,7 +58,8 @@ def cron_note(profile: str, job_id: str) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{safe_name(name)}.md"
     skills = job.get("skills") or job.get("skill") or []
-    if isinstance(skills, str): skills = [skills]
+    if isinstance(skills, str):
+        skills = [skills]
     enabled = job.get("enabled", True) is not False and str(job.get("state") or "") != "paused"
     lines = [
         "---", "type: hermes-cron", f"profile: {profile}", f"job_id: {job_id}",
@@ -72,8 +75,10 @@ def run_json(cmd: list[str]) -> dict:
     p = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if p.returncode != 0:
         raise NoteError((p.stderr or p.stdout or "Hermes command failed").strip())
-    try: return json.loads(p.stdout)
-    except json.JSONDecodeError as exc: raise NoteError("Hermes returned invalid JSON") from exc
+    try:
+        return json.loads(p.stdout)
+    except json.JSONDecodeError as exc:
+        raise NoteError("Hermes returned invalid JSON") from exc
 
 def task_note(board: str, task_id: str) -> Path:
     raw = run_json([HERMES, "kanban", "--board", board, "show", task_id, "--json"])
@@ -103,39 +108,31 @@ def open_obsidian(path: Path) -> None:
     subprocess.Popen(["xdg-open", uri], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def edit_nvim(path: Path) -> None:
-    cmd = shlex.join([sys.executable, str(Path(__file__).resolve()), "_nvim", str(path)])
-    subprocess.Popen(["omarchy-launch-floating-terminal-with-presentation", cmd], start_new_session=True,
+    nvim = shlex.join(["nvim", str(path)])
+    sync = shlex.join([sys.executable, str(SYNC), str(path)])
+    command = f"{nvim}; rc=$?; if [ $rc -eq 0 ]; then {sync}; fi; exit $rc"
+    subprocess.Popen(["omarchy-launch-floating-terminal-with-presentation", command], start_new_session=True,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-def nvim_session(path: Path) -> None:
-    p = subprocess.run(["nvim", str(path)], check=False)
-    if p.returncode not in (0,130):
-        raise NoteError(f"Nvim exited {p.returncode}")
-    if p.returncode == 0:
-        subprocess.run([sys.executable, str(SYNC), str(path)], check=False)
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["obsidian","nvim","bootstrap","_nvim"])
-    ap.add_argument("kind", nargs="?", choices=["cron","task"])
-    ap.add_argument("scope", nargs="?")
-    ap.add_argument("item_id", nargs="?")
+    ap.add_argument("action", choices=["obsidian","nvim","bootstrap"])
+    ap.add_argument("kind", choices=["cron","task"])
+    ap.add_argument("scope")
+    ap.add_argument("item_id")
     args = ap.parse_args()
     try:
-        if args.action == "_nvim":
-            # argparse places the path in kind/scope when called positionally; join non-empty tail.
-            parts = [x for x in (args.kind,args.scope,args.item_id) if x]
-            nvim_session(Path(" ".join(parts)))
-            return 0
-        if not (args.kind and args.scope and args.item_id):
-            raise NoteError("kind, scope and item id are required")
         note = make_note(args.kind,args.scope,args.item_id)
-        if args.action == "bootstrap": print(note)
-        elif args.action == "obsidian": open_obsidian(note)
-        elif args.action == "nvim": edit_nvim(note)
+        if args.action == "bootstrap":
+            print(note)
+        elif args.action == "obsidian":
+            open_obsidian(note)
+        elif args.action == "nvim":
+            edit_nvim(note)
         return 0
     except Exception as exc:
         print(f"Hermes Work note: {exc}", file=sys.stderr)
         return 1
 
-if __name__ == "__main__": raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())
