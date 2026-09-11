@@ -63,17 +63,33 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     return data, body
 
 def section(text: str, heading: str) -> str:
+    """Return one Markdown section while preserving nested subsections.
+
+    A level-1 section ends only at the next level-1 heading, so content such
+    as ``# Body`` may safely contain ``##`` subsections. A level-2 section
+    ends at the next level-1 or level-2 heading.
+    """
     marker = f"# {heading}\n"
     pos = text.find(marker)
+    level = 1
+
     if pos < 0:
         marker = f"## {heading}\n"
         pos = text.find(marker)
+        level = 2
+
     if pos < 0:
         return ""
+
     start = pos + len(marker)
     rest = text[start:]
-    m = re.search(r"\n#{1,2}\s+", rest)
-    return (rest[:m.start()] if m else rest).strip()
+
+    if level == 1:
+        boundary = re.search(r"\n#\s+", rest)
+    else:
+        boundary = re.search(r"\n#{1,2}\s+", rest)
+
+    return (rest[:boundary.start()] if boundary else rest).strip()
 
 def cron_store(profile: str) -> tuple[Path, dict[str, Any]]:
     path = profile_home(profile) / "cron" / "jobs.json"
@@ -141,30 +157,101 @@ def sync_task(path: Path) -> str:
     meta, body = parse_frontmatter(path.read_text(encoding="utf-8"))
     board = str(meta.get("board") or "default")
     task_id = str(meta.get("task_id") or "")
-    title = section(body, "Title").splitlines()[0].strip() if section(body, "Title") else ""
+
+    title_section = section(body, "Title")
+    title = title_section.splitlines()[0].strip() if title_section else ""
+
+    # `section()` intentionally returns "" both for a missing section and an
+    # empty section. Keep those cases fail-safe for task bodies: this process
+    # runs automatically, so ambiguity must never become a destructive clear.
+    body_heading_present = "# Body\n" in body or "## Body\n" in body
     task_body = section(body, "Body")
+
     if not task_id or not title:
         raise SyncError("task file needs task_id and # Title")
+
+    if not body_heading_present:
+        raise SyncError(
+            f"task {board}/{task_id}: missing # Body section; "
+            "refusing to infer an empty body"
+        )
+
     db = board_db(board)
     conn = sqlite3.connect(str(db), timeout=5)
     conn.row_factory = sqlite3.Row
+
     try:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT title, body FROM tasks WHERE id=?", (task_id,)).fetchone()
+
+        row = conn.execute(
+            "SELECT title, body FROM tasks WHERE id=?",
+            (task_id,),
+        ).fetchone()
+
         if not row:
             raise SyncError(f"task {task_id} not found")
-        if str(row["title"] or "") == title and str(row["body"] or "") == task_body:
+
+        live_title = str(row["title"] or "")
+        live_body = str(row["body"] or "")
+
+        # Critical safety boundary:
+        # an automatic note sync may replace a body with another body,
+        # but it may never turn a durable non-empty body into nothing.
+        if live_body and not task_body:
+            raise SyncError(
+                f"task {board}/{task_id}: REFUSED empty body sync; "
+                f"live Kanban body is non-empty ({len(live_body)} chars)"
+            )
+
+        changed_fields: list[str] = []
+
+        if live_title != title:
+            changed_fields.append("title")
+
+        if live_body != task_body:
+            changed_fields.append("body")
+
+        if not changed_fields:
             conn.rollback()
             return f"task {board}/{task_id} unchanged"
-        conn.execute("UPDATE tasks SET title=?, body=? WHERE id=?", (title, task_body, task_id))
-        conn.execute("INSERT INTO task_events (task_id, kind, payload, created_at) VALUES (?, 'edited', NULL, ?)", (task_id, int(time.time())))
+
+        conn.execute(
+            "UPDATE tasks SET title=?, body=? WHERE id=?",
+            (title, task_body, task_id),
+        )
+
+        payload: dict[str, Any] = {
+            "fields": changed_fields,
+            "source": "hermes-work-sync",
+        }
+
+        if "body" in changed_fields:
+            payload["body_length"] = len(task_body)
+
+        conn.execute(
+            """
+            INSERT INTO task_events (task_id, kind, payload, created_at)
+            VALUES (?, 'edited', ?, ?)
+            """,
+            (
+                task_id,
+                json.dumps(payload, ensure_ascii=False),
+                int(time.time()),
+            ),
+        )
+
         conn.commit()
+
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-    return f"task {board}/{task_id} synced"
+
+    return (
+        f"task {board}/{task_id} synced "
+        f"({', '.join(changed_fields)})"
+    )
 
 def sync_file(path: Path) -> str:
     path = path.expanduser().resolve()
